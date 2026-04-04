@@ -1,18 +1,40 @@
 -- ============================================================================
 -- STICKY NOTES SYSTEM
 -- ============================================================================
-
 local M = {}
-
 local sticky_dir = vim.fn.stdpath("config") .. "/sticky_notes"
 
 -- Ensure directory exists
 vim.fn.mkdir(sticky_dir, "p")
 
+-- Get safe filename from path
+local function get_safe_name(cwd)
+  return (cwd or vim.loop.cwd() or vim.fn.getcwd()):gsub("[^%w%._-]", "%%")
+end
+
+-- Auto-save on buffer changes
+local function setup_autosave(buf, sticky_file)
+  vim.api.nvim_create_autocmd("BufLeave", {
+    buffer = buf,
+    callback = function()
+      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+      vim.fn.writefile(lines, sticky_file)
+      vim.notify("Sticky note saved", vim.log.levels.INFO)
+    end,
+  })
+  vim.api.nvim_create_autocmd("TextChanged", {
+    buffer = buf,
+    callback = function()
+      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+      vim.fn.writefile(lines, sticky_file)
+    end,
+  })
+end
+
 -- Open sticky note for current project
 function M.open_split_sticky_note()
   local cwd = vim.loop.cwd() or vim.fn.getcwd()
-  local safe_name = cwd:gsub("[^%w%._-]", "%%")
+  local safe_name = get_safe_name(cwd)
   local sticky_file = sticky_dir .. "/" .. safe_name .. ".md"
 
   -- Default content if file doesn't exist
@@ -50,21 +72,16 @@ function M.open_split_sticky_note()
     col = col,
     style = "minimal",
     border = "rounded",
-    title = " 📝 Sticky Note ",
+    title = " Sticky Note ",
     title_pos = "center",
   })
 
   vim.cmd("startinsert")
 
-  -- Save & Close
-  vim.keymap.set("n", "<leader>w", function()
-    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-    vim.fn.writefile(lines, sticky_file)
-    vim.notify("✅ Sticky note saved for this project", vim.log.levels.INFO)
-    vim.api.nvim_win_close(win, true)
-  end, { buffer = buf, silent = true })
+  -- Setup auto-save
+  setup_autosave(buf, sticky_file)
 
-  -- Close without saving
+  -- Close with Esc
   vim.keymap.set("n", "<Esc>", function()
     vim.api.nvim_win_close(win, true)
   end, { buffer = buf, silent = true })
@@ -86,7 +103,6 @@ function M.toggle_sticky_note_picker()
     end,
   }, function(choice)
     if not choice then return end
-
     local lines = vim.fn.readfile(choice)
     local buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -105,18 +121,55 @@ function M.toggle_sticky_note_picker()
       col = col,
       style = "minimal",
       border = "rounded",
-      title = " 📝 Sticky Note ",
+      title = " Sticky Note ",
       title_pos = "center",
     })
 
     vim.cmd("startinsert")
+    setup_autosave(buf, choice)
+
+    -- Close with Esc
+    vim.keymap.set("n", "<Esc>", function()
+      vim.api.nvim_win_close(win, true)
+    end, { buffer = buf, silent = true })
   end)
 end
 
--- Optional: Setup function for future
-function M.setup()
-  vim.keymap.set("n", "<leader>mn", M.open_split_sticky_note, { desc = "Open Sticky Note" })
-  vim.keymap.set("n", "<leader>ms", M.toggle_sticky_note_picker, { desc = "Sticky Notes Picker" })
+-- Delete a sticky note
+function M.delete_sticky_note()
+  local files = vim.fn.globpath(sticky_dir, "*.md", false, true)
+  if #files == 0 then
+    vim.notify("No sticky notes to delete", vim.log.levels.INFO)
+    return
+  end
+
+  vim.ui.select(files, {
+    prompt = "Delete Sticky Note:",
+    format_item = function(file)
+      local name = vim.fn.fnamemodify(file, ":t:r")
+      return name:gsub("%%", "/")
+    end,
+  }, function(choice)
+    if not choice then return end
+    vim.fn.delete(choice)
+    vim.notify("Sticky note deleted", vim.log.levels.INFO)
+  end)
+end
+
+-- Setup function
+function M.setup(opts)
+  opts = opts or {}
+
+  -- Create commands
+  vim.api.nvim_create_user_command("StickyNote", M.open_split_sticky_note, {})
+  vim.api.nvim_create_user_command("StickyNotePicker", M.toggle_sticky_note_picker, {})
+  vim.api.nvim_create_user_command("StickyNoteDelete", M.delete_sticky_note, {})
+
+  -- Set keymaps if not disabled
+  if opts.keymaps ~= false then
+    vim.keymap.set("n", "<leader>mn", M.open_split_sticky_note, { desc = "Open Sticky Note" })
+    vim.keymap.set("n", "<leader>ms", M.toggle_sticky_note_picker, { desc = "Sticky Notes Picker" })
+  end
 end
 
 return M

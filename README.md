@@ -1,68 +1,103 @@
-# 🗒️ Neovim Sticky Notes
+# sticky-notes.nvim
 
-Simple **per-project** floating sticky notes for Neovim.
+Project-specific sticky notes for Neovim with auto-save and fuzzy picking.
 
-One note per folder/project. Super lightweight and fast.
+## Features
 
-### Features
-- Floating window with Markdown support
-- Automatically saves per current working directory
-- Easy picker to browse all notes
-- No dependencies
+- Per-project sticky notes (auto-organized by directory)
+- Auto-save on typing and buffer leave
+- Floating window UI with rounded borders
+- Browse all notes with fuzzy picker
+- Delete notes easily
+- Markdown syntax highlighting
+- Works with LazyVim and other plugin managers
 
----
+## Installation
 
-### How to Install (Manual)
+### LazyVim
 
-1. **Download the file**
+Create `~/.config/nvim/lua/plugins/sticky-notes.lua`:
 
-   Copy the file [`sticky-notes.lua`](sticky-notes.lua) from this repo.
+```lua
+return {
+  "your-username/sticky-notes-nvim",
+  event = "VeryLazy",
+  config = function()
+    require("sticky-notes").setup()
+  end,
+  keys = {
+    {
+      "<leader>mn",
+      function()
+        require("sticky-notes").open_split_sticky_note()
+      end,
+      desc = "Open Sticky Note",
+    },
+    {
+      "<leader>ms",
+      function()
+        require("sticky-notes").toggle_sticky_note_picker()
+      end,
+      desc = "Browse Sticky Notes",
+    },
+    {
+      "<leader>md",
+      function()
+        require("sticky-notes").delete_sticky_note()
+      end,
+      desc = "Delete Sticky Note",
+    },
+  },
+}
+```
 
-2. **Put it in your config**
+### Packer.nvim
 
-   Paste it into your Neovim config folder:
-   ```
-   ~/.config/nvim/lua/config/sticky-notes.lua
-   ```
+```lua
+use "your-username/sticky-notes-nvim"
 
-3. **Load it in your config**
+require("sticky-notes").setup()
+```
 
-   Add this line in your `init.lua`:
+### Vim-plug
 
-   ```lua
-   -- Load sticky notes
-   require("config.sticky-notes").setup()
-   ```
+```vim
+Plug 'your-username/sticky-notes-nvim'
 
-4. **Add keybinds (Optional but recommended)**
+lua require('sticky-notes').setup()
+```
 
-   You can also add these keybinds in your keymaps file:
+## Usage
 
-   ```lua
-   vim.keymap.set("n", "<leader>mn", function()
-     require("config.sticky-notes").open_split_sticky_note()
-   end, { desc = "Open Sticky Note" })
+| Keymap | Action |
+|--------|--------|
+| `<leader>mn` | Open sticky note for current project |
+| `<leader>ms` | Browse all sticky notes |
+| `<leader>md` | Delete a sticky note |
+| `<Esc>` | Close sticky note window |
 
-   vim.keymap.set("n", "<leader>ms", function()
-     require("config.sticky-notes").toggle_sticky_note_picker()
-   end, { desc = "Browse Sticky Notes" })
-   ```
+Or use commands:
 
----
+```vim
+:StickyNote           " Open current project note
+:StickyNotePicker    " Browse all notes
+:StickyNoteDelete    " Delete a note
+```
 
-### Usage
+## Configuration
 
-- `<leader>mn` → Open sticky note for current project
-- `<leader>w` → Save note and close
-- `<leader>ms` → Browse all your sticky notes
+```lua
+require("sticky-notes").setup({
+  keymaps = true,  -- Set to false to disable default keymaps
+})
+```
 
----
+## Storage
 
-### Future Plans
-- Task progress tracking
-- Global search across notes
-- Templates
-- Auto-hide / persistent mode
+Notes stored at: `~/.config/nvim/sticky_notes/`
 
-Star ⭐ the repo if you like it and want me to develop it further!
+Each project gets a file based on its working directory path.
 
+## License
+
+MIT
