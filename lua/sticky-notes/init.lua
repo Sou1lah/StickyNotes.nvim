@@ -1,44 +1,20 @@
 -- ============================================================================
--- STICKY NOTES SYSTEM
+-- STICKY NOTES PLUGIN
 -- ============================================================================
 local M = {}
-local sticky_dir = vim.fn.stdpath("config") .. "/sticky_notes"
 
--- Ensure directory exists
+local sticky_dir = vim.fn.stdpath("data") .. "/sticky-notes"
 vim.fn.mkdir(sticky_dir, "p")
 
--- Get safe filename from path
+-- Better filename sanitization
 local function get_safe_name(cwd)
-  return (cwd or vim.loop.cwd() or vim.fn.getcwd()):gsub("[^%w%._-]", "%%")
+  cwd = cwd or vim.loop.cwd() or vim.fn.getcwd()
+  return cwd:gsub("[^%w%._-]", "_"):gsub("__+", "_")
 end
 
--- Auto-save on buffer changes
-local function setup_autosave(buf, sticky_file)
-  vim.api.nvim_create_autocmd("BufLeave", {
-    buffer = buf,
-    callback = function()
-      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-      vim.fn.writefile(lines, sticky_file)
-      vim.notify("Sticky note saved", vim.log.levels.INFO)
-    end,
-  })
-  vim.api.nvim_create_autocmd("TextChanged", {
-    buffer = buf,
-    callback = function()
-      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-      vim.fn.writefile(lines, sticky_file)
-    end,
-  })
-end
-
--- Open sticky note for current project
-function M.open_split_sticky_note()
-  local cwd = vim.loop.cwd() or vim.fn.getcwd()
-  local safe_name = get_safe_name(cwd)
-  local sticky_file = sticky_dir .. "/" .. safe_name .. ".md"
-
-  -- Default content if file doesn't exist
-  local default_content = {
+-- Helper to open a note in floating window
+local function open_note_in_float(file, title)
+  local lines = vim.fn.filereadable(file) == 1 and vim.fn.readfile(file) or {
     "## Tasks",
     "- [ ] Task 1",
     "- [ ] Task 2",
@@ -46,130 +22,112 @@ function M.open_split_sticky_note()
     "----------------------------------------",
     "## Notes",
     "> Start typing here...",
-    "",
   }
 
-  if vim.fn.filereadable(sticky_file) == 1 then
-    default_content = vim.fn.readfile(sticky_file)
-  end
-
-  -- Create buffer
   local buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, default_content)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.api.nvim_buf_set_option(buf, "filetype", "markdown")
 
-  -- Floating window config
   local width = math.floor(vim.o.columns * 0.65)
-  local height = math.floor(vim.o.lines * 0.45)
-  local row = math.floor((vim.o.lines - height) / 2)
-  local col = math.floor((vim.o.columns - width) / 2)
+  local height = math.floor(vim.o.lines * 0.55)
 
   local win = vim.api.nvim_open_win(buf, true, {
     relative = "editor",
     width = width,
     height = height,
-    row = row,
-    col = col,
+    row = math.floor((vim.o.lines - height) / 2),
+    col = math.floor((vim.o.columns - width) / 2),
     style = "minimal",
     border = "rounded",
-    title = " Sticky Note ",
+    title = " " .. (title or "Sticky Note") .. " ",
     title_pos = "center",
   })
 
+  -- Auto save
+  local save = function()
+    local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    vim.fn.writefile(content, file)
+  end
+
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "BufLeave" }, {
+    buffer = buf,
+    callback = save,
+  })
+
+  -- Better close mappings
+  vim.keymap.set("n", "q", function() vim.api.nvim_win_close(win, true) end, { buffer = buf, silent = true })
+  vim.keymap.set("n", "<Esc>", function() vim.api.nvim_win_close(win, true) end, { buffer = buf, silent = true })
+  vim.keymap.set("i", "<C-c>", "<Esc>", { buffer = buf, silent = true })
+
   vim.cmd("startinsert")
-
-  -- Setup auto-save
-  setup_autosave(buf, sticky_file)
-
-  -- Close with Esc
-  vim.keymap.set("n", "<Esc>", function()
-    vim.api.nvim_win_close(win, true)
-  end, { buffer = buf, silent = true })
 end
 
--- Browse all sticky notes
+-- ====================== Public API ======================
+
+function M.open_split_sticky_note()
+  local cwd = vim.loop.cwd() or vim.fn.getcwd()
+  local safe_name = get_safe_name(cwd)
+  local file = sticky_dir .. "/" .. safe_name .. ".md"
+
+  open_note_in_float(file, vim.fn.fnamemodify(cwd, ":t"))
+end
+
 function M.toggle_sticky_note_picker()
   local files = vim.fn.globpath(sticky_dir, "*.md", false, true)
   if #files == 0 then
-    vim.notify("No sticky notes found yet!", vim.log.levels.INFO)
+    vim.notify("No sticky notes yet. Create one with <leader>mn", vim.log.levels.INFO)
     return
   end
 
   vim.ui.select(files, {
-    prompt = "Select Sticky Note:",
+    prompt = "Sticky Notes",
     format_item = function(file)
       local name = vim.fn.fnamemodify(file, ":t:r")
-      return name:gsub("%%", "/") -- restore readable path
+      return name:gsub("_", "/")
     end,
   }, function(choice)
-    if not choice then return end
-    local lines = vim.fn.readfile(choice)
-    local buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    vim.api.nvim_buf_set_option(buf, "filetype", "markdown")
-
-    local width = math.floor(vim.o.columns * 0.65)
-    local height = math.floor(vim.o.lines * 0.45)
-    local row = math.floor((vim.o.lines - height) / 2)
-    local col = math.floor((vim.o.columns - width) / 2)
-
-    local win = vim.api.nvim_open_win(buf, true, {
-      relative = "editor",
-      width = width,
-      height = height,
-      row = row,
-      col = col,
-      style = "minimal",
-      border = "rounded",
-      title = " Sticky Note ",
-      title_pos = "center",
-    })
-
-    vim.cmd("startinsert")
-    setup_autosave(buf, choice)
-
-    -- Close with Esc
-    vim.keymap.set("n", "<Esc>", function()
-      vim.api.nvim_win_close(win, true)
-    end, { buffer = buf, silent = true })
+    if choice then
+      local title = vim.fn.fnamemodify(choice, ":t:r"):gsub("_", "/")
+      open_note_in_float(choice, title)
+    end
   end)
 end
 
--- Delete a sticky note
 function M.delete_sticky_note()
   local files = vim.fn.globpath(sticky_dir, "*.md", false, true)
   if #files == 0 then
-    vim.notify("No sticky notes to delete", vim.log.levels.INFO)
+    vim.notify("Nothing to delete", vim.log.levels.WARN)
     return
   end
 
   vim.ui.select(files, {
     prompt = "Delete Sticky Note:",
     format_item = function(file)
-      local name = vim.fn.fnamemodify(file, ":t:r")
-      return name:gsub("%%", "/")
+      return vim.fn.fnamemodify(file, ":t:r"):gsub("_", "/")
     end,
   }, function(choice)
-    if not choice then return end
-    vim.fn.delete(choice)
-    vim.notify("Sticky note deleted", vim.log.levels.INFO)
+    if choice then
+      vim.fn.delete(choice)
+      vim.notify("Deleted: " .. vim.fn.fnamemodify(choice, ":t"), vim.log.levels.INFO)
+    end
   end)
 end
 
--- Setup function
+-- Setup
 function M.setup(opts)
   opts = opts or {}
 
-  -- Create commands
   vim.api.nvim_create_user_command("StickyNote", M.open_split_sticky_note, {})
   vim.api.nvim_create_user_command("StickyNotePicker", M.toggle_sticky_note_picker, {})
   vim.api.nvim_create_user_command("StickyNoteDelete", M.delete_sticky_note, {})
 
-  -- Set keymaps if not disabled
   if opts.keymaps ~= false then
     vim.keymap.set("n", "<leader>mn", M.open_split_sticky_note, { desc = "Open Sticky Note" })
     vim.keymap.set("n", "<leader>ms", M.toggle_sticky_note_picker, { desc = "Sticky Notes Picker" })
+    vim.keymap.set("n", "<leader>md", M.delete_sticky_note, { desc = "Delete Sticky Note" })
   end
+
+  vim.notify("Sticky Notes plugin loaded ✓", vim.log.levels.INFO)
 end
 
 return M
