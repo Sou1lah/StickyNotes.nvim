@@ -91,7 +91,7 @@ function M.toggle_sticky_note_picker()
 
   local buf = vim.api.nvim_create_buf(false, true)
 
-  local win_width = math.floor(vim.o.columns * 0.65) -- ← Wider (85% of screen)
+  local win_width = math.floor(vim.o.columns * 0.35) -- ← Wider (85% of screen)
   local win_height = 22
 
   local win = vim.api.nvim_open_win(buf, true, {
