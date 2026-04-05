@@ -60,24 +60,32 @@ local function open_note_in_float(file, title)
   vim.keymap.set("i", "<C-c>", "<Esc>", { buffer = buf, silent = true })
 
   -- Enter creates new checkbox line
+  -- Replace your current <CR> mapping with this:
   vim.keymap.set("i", "<CR>", function()
-    local line = vim.fn.getline(".")
-    if line:match("^%s*%- %[ %]") then
-      vim.fn.feedkeys(vim.api.nvim_replace_termcodes("<CR>- [ ] ", true, true, true), "n")
-    else
-      vim.fn.feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, true, true), "n")
-    end
-  end, { buffer = buf, noremap = true })
+    local line = vim.api.nvim_get_current_line()
+    -- Matches indentation + list marker + checkbox
+    local indent, bullet = line:match("^(%s*)([%*%-%+]%s%[[%sx]%])")
 
-  -- Tab toggles checkbox
-  vim.keymap.set("n", "<Tab>", function()
-    local line = vim.fn.getline(".")
-    if line:match("%- %[ %]") then
-      vim.fn.setline(".", line:gsub("%- %[ %]", "- [x]", 1))
-    elseif line:match("%- %[x%]") then
-      vim.fn.setline(".", line:gsub("%- %[x%]", "- [ ]", 1))
+    if bullet then
+      -- Clean the checkbox for the new line: [ ]
+      local new_checkbox = bullet:gsub("%[x%]", "[ ]")
+      vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>" .. indent .. new_checkbox .. " ", true, true, true),
+        "n", false)
+    else
+      vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, true, true), "n", false)
     end
-  end, { buffer = buf, noremap = true })
+  end, { buffer = buf, noremap = true, silent = true })
+
+  -- Replace your current Tab mapping with this:
+  vim.keymap.set("n", "<Tab>", function()
+    local line = vim.api.nvim_get_current_line()
+    if line:match("%[ %]") then
+      line = line:gsub("%[ %]", "[x]", 1)
+    elseif line:match("%[x%]") then
+      line = line:gsub("%[x%]", "[ ]", 1)
+    end
+    vim.api.nvim_set_current_line(line)
+  end, { buffer = buf, noremap = true, silent = true })
 
   vim.cmd("startinsert")
 end
