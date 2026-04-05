@@ -59,6 +59,26 @@ local function open_note_in_float(file, title)
   vim.keymap.set("n", "<Esc>", function() vim.api.nvim_win_close(win, true) end, { buffer = buf, silent = true })
   vim.keymap.set("i", "<C-c>", "<Esc>", { buffer = buf, silent = true })
 
+  -- Enter creates new checkbox line
+  vim.keymap.set("i", "<CR>", function()
+    local line = vim.fn.getline(".")
+    if line:match("^%s*%- %[ %]") then
+      vim.fn.feedkeys(vim.api.nvim_replace_termcodes("<CR>- [ ] ", true, true, true), "n")
+    else
+      vim.fn.feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, true, true), "n")
+    end
+  end, { buffer = buf, noremap = true })
+
+  -- Space toggles checkbox
+  vim.keymap.set("n", "<Space>", function()
+    local line = vim.fn.getline(".")
+    if line:match("%- %[%s%]") then
+      vim.fn.setline(".", line:gsub("%- %[%s%]", "- [x]", 1))
+    elseif line:match("%- %[x%]") then
+      vim.fn.setline(".", line:gsub("%- %[x%]", "- [ ]", 1))
+    end
+  end, { buffer = buf, noremap = true })
+
   vim.cmd("startinsert")
 end
 
