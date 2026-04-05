@@ -1,5 +1,5 @@
 -- ============================================================================
--- STICKY NOTES PLUGIN
+-- STICKY NOTES PLUGIN - 50% Width Picker (Clean & No Overflow)
 -- ============================================================================
 local M = {}
 
@@ -45,7 +45,6 @@ local function open_note_in_float(file, title)
   vim.keymap.set("n", "q", close, { buffer = buf, silent = true })
   vim.keymap.set("n", "<Esc>", close, { buffer = buf, silent = true })
 
-  -- Checkbox support
   vim.keymap.set("i", "<CR>", function()
     local line = vim.api.nvim_get_current_line()
     if line:match("^%s*%- %[[^%]]*%]") then
@@ -61,7 +60,6 @@ local function open_note_in_float(file, title)
     vim.api.nvim_set_current_line(toggled)
   end, { buffer = buf, silent = true })
 
-  -- Word count bottom right
   local function update_word_count()
     local count = 0
     for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
@@ -73,7 +71,7 @@ local function open_note_in_float(file, title)
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, { buffer = buf, callback = update_word_count })
 end
 
--- ====================== Wider Picker (85% width) ======================
+-- ====================== 50% Width Picker ======================
 function M.toggle_sticky_note_picker()
   local files = vim.fn.globpath(sticky_dir, "*.md", false, true)
   if #files == 0 then
@@ -91,7 +89,7 @@ function M.toggle_sticky_note_picker()
 
   local buf = vim.api.nvim_create_buf(false, true)
 
-  local win_width = math.floor(vim.o.columns * 0.50) -- ← Wider (85% of screen)
+  local win_width = math.floor(vim.o.columns * 0.50) -- ← 50% width as requested
   local win_height = 22
 
   local win = vim.api.nvim_open_win(buf, true, {
@@ -114,23 +112,25 @@ function M.toggle_sticky_note_picker()
     vim.api.nvim_buf_set_option(buf, "modifiable", true)
 
     local lines = {}
-    table.insert(lines, "  Name" .. string.rep(" ", 65) .. "Last Modified")
+    -- Header
+    table.insert(lines, "  Name" .. string.rep(" ", 35) .. "Last Modified")
     table.insert(lines, string.rep("─", win_width - 2))
 
+    -- Items
     for i, item in ipairs(filtered) do
       local prefix = (i == selected) and " → " or "   "
       local name = item.name
-      if #name > 65 then name = name:sub(1, 62) .. "..." end
-      local padding = 69 - #name
+      if #name > 38 then name = name:sub(1, 35) .. "..." end -- Prevent overflow
+      local padding = 40 - #name
       table.insert(lines, prefix .. name .. string.rep(" ", padding) .. item.modified)
     end
 
     while #lines < win_height - 4 do table.insert(lines, "") end
 
+    -- Footer
     table.insert(lines, string.rep("─", win_width - 2))
     if show_help then
-      table.insert(lines,
-        "  ↑↓/jk : Move    <CR> : Open    d : Delete    r : Rename    / : Search    ? : Help    q : Quit")
+      table.insert(lines, "  ↑↓/jk : Move   <CR> : Open   d:Del   r:Ren   /:Search   ?:Help   q:Quit")
     else
       table.insert(lines, "  Press ? for shortcuts")
     end
@@ -156,18 +156,10 @@ function M.toggle_sticky_note_picker()
   vim.keymap.set("n", "<Down>", function() move(1) end, { buffer = buf, silent = true })
   vim.keymap.set("n", "<Up>", function() move(-1) end, { buffer = buf, silent = true })
 
-  vim.keymap.set("n", "<C-d>", function() move(7) end, { buffer = buf, silent = true })
-  vim.keymap.set("n", "<C-u>", function() move(-7) end, { buffer = buf, silent = true })
-  vim.keymap.set("n", "gg", function()
-    selected = 1; render()
-  end, { buffer = buf, silent = true })
-  vim.keymap.set("n", "G", function()
-    selected = #filtered; render()
-  end, { buffer = buf, silent = true })
-
   vim.keymap.set("n", "<CR>", function()
     if filtered[selected] then
-      close(); open_note_in_float(filtered[selected].file, filtered[selected].name)
+      close()
+      open_note_in_float(filtered[selected].file, filtered[selected].name)
     end
   end, { buffer = buf, silent = true })
 
@@ -177,7 +169,7 @@ function M.toggle_sticky_note_picker()
   vim.keymap.set("n", "d", function()
     if not filtered[selected] then return end
     close()
-    vim.ui.select({ "Yes", "No" }, { prompt = "Delete note?" }, function(choice)
+    vim.ui.select({ "Yes", "No" }, { prompt = "Delete?" }, function(choice)
       if choice == "Yes" then
         vim.fn.delete(filtered[selected].file); M.toggle_sticky_note_picker()
       end
