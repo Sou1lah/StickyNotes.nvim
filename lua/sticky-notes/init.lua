@@ -70,7 +70,7 @@ local function open_note_in_float(file, title)
   end, { buffer = buf, noremap = true })
 
   -- Space toggles checkbox
-  vim.keymap.set("n", "c", function()
+  vim.keymap.set("n", "<Tab>", function()
     local line = vim.fn.getline(".")
     if line:match("%- %[%s%]") then
       vim.fn.setline(".", line:gsub("%- %[%s%]", "- [x]", 1))
