@@ -15,3 +15,5 @@ if ok and sticky and type(sticky.setup) == "function" then
 else
   vim.notify("sticky-notes.nvim: Failed to load main module", vim.log.levels.ERROR)
 end
+
+-- hey
