@@ -1,38 +1,45 @@
 -- ============================================================================
--- STICKY NOTES PLUGIN - Clean Names + Reliable Word Count
+-- STICKY NOTES PLUGIN - Custom Names + Path in Picker
 -- ============================================================================
 local M = {}
 
 local sticky_dir = vim.fn.stdpath("data") .. "/sticky-notes"
 vim.fn.mkdir(sticky_dir, "p")
 
-local function get_safe_name(cwd)
+local function get_safe_filename(cwd)
   cwd = cwd or vim.loop.cwd() or vim.fn.getcwd()
   return cwd:gsub("[^%w%._-]", "_"):gsub("__+", "_")
 end
 
--- Better display name (clean but informative)
-local function get_display_name(full_name)
-  local parts = vim.split(full_name, "/")
-  local basename = parts[#parts] or full_name
-
-  if #parts > 2 then
-    return basename .. "  (" .. table.concat(parts, "/", math.max(1, #parts - 2)) .. ")"
-  else
-    return full_name
+-- Read custom title from first line of note (if exists)
+local function get_custom_title(file)
+  if vim.fn.filereadable(file) == 0 then return nil end
+  local first_line = vim.fn.readfile(file, "", 1)[1] or ""
+  if first_line:match("^#%s+") then
+    return first_line:gsub("^#%s+", ""):gsub("^%s+", ""):gsub("%s+$", "")
   end
+  return nil
 end
 
--- ====================== Note Window (Word Count Fixed) ======================
-local function open_note_in_float(file, title)
+-- ====================== Note Window ======================
+local function open_note_in_float(file, default_title)
   local lines = vim.fn.filereadable(file) == 1 and vim.fn.readfile(file) or {
-    "## Tasks", "- [ ] Task 1", "- [ ] Task 2", "", "----------------------------------------",
-    "## Notes", "> Start typing here...",
+    "# " .. (default_title or "New Note"),
+    "",
+    "## Tasks",
+    "- [ ] Task 1",
+    "- [ ] Task 2",
+    "",
+    "----------------------------------------",
+    "## Notes",
+    "> Start typing here...",
   }
 
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.api.nvim_set_option_value("filetype", "markdown", { buf = buf })
+
+  local custom_title = get_custom_title(file) or default_title or "Sticky Note"
 
   local width = math.floor(vim.o.columns * 0.68)
   local height = math.floor(vim.o.lines * 0.58)
@@ -45,10 +52,11 @@ local function open_note_in_float(file, title)
     col = math.floor((vim.o.columns - width) / 2),
     style = "minimal",
     border = "rounded",
-    title = " " .. (title or "Sticky Note") .. " ",
+    title = " " .. custom_title .. " ",
     title_pos = "center",
   })
 
+  -- Auto save
   local function save()
     pcall(vim.fn.writefile, vim.api.nvim_buf_get_lines(buf, 0, -1, false), file)
   end
@@ -59,7 +67,7 @@ local function open_note_in_float(file, title)
   vim.keymap.set("n", "q", close, { buffer = buf, silent = true })
   vim.keymap.set("n", "<Esc>", close, { buffer = buf, silent = true })
 
-  -- Checkbox support
+  -- Checkbox
   vim.keymap.set("i", "<CR>", function()
     local line = vim.api.nvim_get_current_line()
     if line:match("^%s*%- %[[^%]]*%]") then
@@ -75,24 +83,25 @@ local function open_note_in_float(file, title)
     vim.api.nvim_set_current_line(toggled)
   end, { buffer = buf, silent = true })
 
-  -- Word Count - Bottom Right (More Reliable)
-  local function update_word_count()
+  -- Word count + Path in bottom center
+  local function update_status()
     local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local count = 0
     for _, line in ipairs(content) do
       for _ in line:gmatch("%S+") do count = count + 1 end
     end
-    vim.wo[win].statusline = "%= Words: " .. count .. " "
+    local path_hint = vim.fn.fnamemodify(file, ":t:r"):gsub("_", "/")
+    vim.wo[win].statusline = "%= " .. path_hint .. "   |   Words: " .. count .. " %="
   end
 
-  update_word_count()
+  update_status()
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "CursorMoved" }, {
     buffer = buf,
-    callback = update_word_count,
+    callback = update_status,
   })
 end
 
--- ====================== Picker with Clean Names ======================
+-- ====================== Picker ======================
 function M.toggle_sticky_note_picker()
   local files = vim.fn.globpath(sticky_dir, "*.md", false, true)
   if #files == 0 then
@@ -104,13 +113,13 @@ function M.toggle_sticky_note_picker()
   for _, file in ipairs(files) do
     local stat = vim.loop.fs_stat(file)
     local modified = stat and os.date("%Y-%m-%d %H:%M", stat.mtime.sec) or "Unknown"
-    local raw_name = vim.fn.fnamemodify(file, ":t:r"):gsub("_", "/")
-    local display_name = get_display_name(raw_name)
+    local path_name = vim.fn.fnamemodify(file, ":t:r"):gsub("_", "/")
+    local custom = get_custom_title(file)
 
     table.insert(items, {
       file = file,
-      display = display_name,
-      raw = raw_name,
+      display = custom and (custom .. "  →  " .. path_name) or path_name,
+      path_name = path_name,
       modified = modified,
     })
   end
@@ -139,15 +148,13 @@ function M.toggle_sticky_note_picker()
     vim.api.nvim_buf_set_option(buf, "modifiable", true)
     local lines = {}
 
-    -- Header
-    table.insert(lines, "  Name" .. string.rep(" ", 28) .. "Last Modified")
+    table.insert(lines, "  Note Name" .. string.rep(" ", 28) .. "Last Modified")
     table.insert(lines, string.rep("─", win_width - 2))
 
     for i, item in ipairs(filtered) do
       local prefix = (i == selected) and " → " or "   "
       local name = item.display
-      if #name > 35 then name = name:sub(1, 32) .. "..." end
-
+      if #name > 38 then name = name:sub(1, 35) .. "..." end
       local padding = win_width - #prefix - #name - #item.modified - 4
       table.insert(lines, prefix .. name .. string.rep(" ", padding) .. item.modified)
     end
@@ -185,12 +192,33 @@ function M.toggle_sticky_note_picker()
   vim.keymap.set("n", "<CR>", function()
     if filtered[selected] then
       close()
-      open_note_in_float(filtered[selected].file, filtered[selected].raw)
+      open_note_in_float(filtered[selected].file, filtered[selected].path_name)
     end
   end, { buffer = buf, silent = true })
 
   vim.keymap.set("n", "q", close, { buffer = buf, silent = true })
   vim.keymap.set("n", "<Esc>", close, { buffer = buf, silent = true })
+
+  -- Rename with custom name (supports spaces!)
+  vim.keymap.set("n", "r", function()
+    if not filtered[selected] then return end
+    close()
+    vim.ui.input({
+      prompt = "New custom name (spaces allowed): ",
+      default = get_custom_title(filtered[selected].file) or filtered[selected].path_name
+    }, function(new_name)
+      if new_name and new_name ~= "" then
+        local content = vim.fn.readfile(filtered[selected].file)
+        if #content > 0 and content[1]:match("^#") then
+          content[1] = "# " .. new_name
+        else
+          table.insert(content, 1, "# " .. new_name)
+        end
+        vim.fn.writefile(content, filtered[selected].file)
+        M.toggle_sticky_note_picker()
+      end
+    end)
+  end, { buffer = buf, silent = true })
 
   vim.keymap.set("n", "d", function()
     if not filtered[selected] then return end
@@ -203,23 +231,11 @@ function M.toggle_sticky_note_picker()
     end)
   end, { buffer = buf, silent = true })
 
-  vim.keymap.set("n", "r", function()
-    if not filtered[selected] then return end
-    close()
-    vim.ui.input({ prompt = "New name: ", default = filtered[selected].raw }, function(new_name)
-      if new_name and new_name ~= filtered[selected].raw then
-        local safe = new_name:gsub("[^%w%._-]", "_"):gsub("__+", "_")
-        vim.fn.rename(filtered[selected].file, sticky_dir .. "/" .. safe .. ".md")
-        M.toggle_sticky_note_picker()
-      end
-    end)
-  end, { buffer = buf, silent = true })
-
   vim.keymap.set("n", "/", function()
     vim.ui.input({ prompt = "Search: " }, function(input)
       if input then
         filtered = vim.tbl_filter(function(item)
-          return item.raw:lower():find(input:lower(), 1, true)
+          return item.display:lower():find(input:lower(), 1, true)
         end, items)
         selected = 1
         render()
@@ -247,7 +263,7 @@ end
 
 function M.open_sticky_note()
   local cwd = vim.loop.cwd() or vim.fn.getcwd()
-  local safe_name = get_safe_name(cwd)
+  local safe_name = get_safe_filename(cwd)
   local file = sticky_dir .. "/" .. safe_name .. ".md"
   open_note_in_float(file, vim.fn.fnamemodify(cwd, ":t"))
 end
