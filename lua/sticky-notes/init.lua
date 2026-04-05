@@ -83,6 +83,8 @@ local function open_note_in_float(file, title)
 
     vim.api.nvim_buf_set_lines(buf, row, row + 1, false, { new_line })
   end, { buffer = buf, noremap = true })
+
+
   vim.cmd("startinsert")
 end
 
