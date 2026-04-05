@@ -1,5 +1,5 @@
 -- ============================================================================
--- STICKY NOTES PLUGIN - 50% Width + Right Aligned Last Modified
+-- STICKY NOTES PLUGIN - Clean Names + Reliable Word Count
 -- ============================================================================
 local M = {}
 
@@ -11,7 +11,19 @@ local function get_safe_name(cwd)
   return cwd:gsub("[^%w%._-]", "_"):gsub("__+", "_")
 end
 
--- ====================== Note Window ======================
+-- Better display name (clean but informative)
+local function get_display_name(full_name)
+  local parts = vim.split(full_name, "/")
+  local basename = parts[#parts] or full_name
+
+  if #parts > 2 then
+    return basename .. "  (" .. table.concat(parts, "/", math.max(1, #parts - 2)) .. ")"
+  else
+    return full_name
+  end
+end
+
+-- ====================== Note Window (Word Count Fixed) ======================
 local function open_note_in_float(file, title)
   local lines = vim.fn.filereadable(file) == 1 and vim.fn.readfile(file) or {
     "## Tasks", "- [ ] Task 1", "- [ ] Task 2", "", "----------------------------------------",
@@ -37,7 +49,9 @@ local function open_note_in_float(file, title)
     title_pos = "center",
   })
 
-  local function save() pcall(vim.fn.writefile, vim.api.nvim_buf_get_lines(buf, 0, -1, false), file) end
+  local function save()
+    pcall(vim.fn.writefile, vim.api.nvim_buf_get_lines(buf, 0, -1, false), file)
+  end
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "BufLeave" }, { buffer = buf, callback = save })
 
   local function close() pcall(vim.api.nvim_win_close, win, true) end
@@ -45,6 +59,7 @@ local function open_note_in_float(file, title)
   vim.keymap.set("n", "q", close, { buffer = buf, silent = true })
   vim.keymap.set("n", "<Esc>", close, { buffer = buf, silent = true })
 
+  -- Checkbox support
   vim.keymap.set("i", "<CR>", function()
     local line = vim.api.nvim_get_current_line()
     if line:match("^%s*%- %[[^%]]*%]") then
@@ -60,18 +75,24 @@ local function open_note_in_float(file, title)
     vim.api.nvim_set_current_line(toggled)
   end, { buffer = buf, silent = true })
 
+  -- Word Count - Bottom Right (More Reliable)
   local function update_word_count()
+    local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local count = 0
-    for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
-      count = count + #vim.split(line, "%s+")
+    for _, line in ipairs(content) do
+      for _ in line:gmatch("%S+") do count = count + 1 end
     end
     vim.wo[win].statusline = "%= Words: " .. count .. " "
   end
+
   update_word_count()
-  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, { buffer = buf, callback = update_word_count })
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "CursorMoved" }, {
+    buffer = buf,
+    callback = update_word_count,
+  })
 end
 
--- ====================== 50% Width + Right Aligned Date ======================
+-- ====================== Picker with Clean Names ======================
 function M.toggle_sticky_note_picker()
   local files = vim.fn.globpath(sticky_dir, "*.md", false, true)
   if #files == 0 then
@@ -83,8 +104,15 @@ function M.toggle_sticky_note_picker()
   for _, file in ipairs(files) do
     local stat = vim.loop.fs_stat(file)
     local modified = stat and os.date("%Y-%m-%d %H:%M", stat.mtime.sec) or "Unknown"
-    local name = vim.fn.fnamemodify(file, ":t:r"):gsub("_", "/")
-    table.insert(items, { file = file, name = name, modified = modified })
+    local raw_name = vim.fn.fnamemodify(file, ":t:r"):gsub("_", "/")
+    local display_name = get_display_name(raw_name)
+
+    table.insert(items, {
+      file = file,
+      display = display_name,
+      raw = raw_name,
+      modified = modified,
+    })
   end
 
   local buf = vim.api.nvim_create_buf(false, true)
@@ -109,37 +137,23 @@ function M.toggle_sticky_note_picker()
 
   local function render()
     vim.api.nvim_buf_set_option(buf, "modifiable", true)
-
     local lines = {}
 
-    -- Header with right aligned "Last Modified"
-    local header_name = "  Name"
-    local header_date = "Last Modified"
-    local date_width = #header_date
-    local name_width = win_width - date_width - 6 -- space for padding
-    table.insert(lines, header_name .. string.rep(" ", name_width - #header_name + 2) .. header_date)
-
+    -- Header
+    table.insert(lines, "  Name" .. string.rep(" ", 28) .. "Last Modified")
     table.insert(lines, string.rep("─", win_width - 2))
 
-    -- Items
     for i, item in ipairs(filtered) do
       local prefix = (i == selected) and " → " or "   "
-      local name = item.name
-      if #name > name_width - 5 then
-        name = name:sub(1, name_width - 8) .. "..."
-      end
+      local name = item.display
+      if #name > 35 then name = name:sub(1, 32) .. "..." end
 
-      local date_str = item.modified
-      local padding = win_width - #prefix - #name - #date_str - 4
-      table.insert(lines, prefix .. name .. string.rep(" ", padding) .. date_str)
+      local padding = win_width - #prefix - #name - #item.modified - 4
+      table.insert(lines, prefix .. name .. string.rep(" ", padding) .. item.modified)
     end
 
-    -- Fill empty lines
-    while #lines < win_height - 4 do
-      table.insert(lines, "")
-    end
+    while #lines < win_height - 4 do table.insert(lines, "") end
 
-    -- Footer
     table.insert(lines, string.rep("─", win_width - 2))
     if show_help then
       table.insert(lines, "  ↑↓/jk : Move   <CR> : Open   d:Del   r:Ren   /:Search   ?:Help   q:Quit")
@@ -150,7 +164,6 @@ function M.toggle_sticky_note_picker()
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     vim.api.nvim_buf_set_option(buf, "modifiable", false)
 
-    -- Highlight selected
     vim.api.nvim_buf_clear_namespace(buf, -1, 0, -1)
     vim.api.nvim_buf_add_highlight(buf, 0, "Visual", selected + 1, 0, -1)
   end
@@ -163,7 +176,7 @@ function M.toggle_sticky_note_picker()
     render()
   end
 
-  -- Keymaps (same as before)
+  -- Keymaps
   vim.keymap.set("n", "j", function() move(1) end, { buffer = buf, silent = true })
   vim.keymap.set("n", "k", function() move(-1) end, { buffer = buf, silent = true })
   vim.keymap.set("n", "<Down>", function() move(1) end, { buffer = buf, silent = true })
@@ -171,7 +184,8 @@ function M.toggle_sticky_note_picker()
 
   vim.keymap.set("n", "<CR>", function()
     if filtered[selected] then
-      close(); open_note_in_float(filtered[selected].file, filtered[selected].name)
+      close()
+      open_note_in_float(filtered[selected].file, filtered[selected].raw)
     end
   end, { buffer = buf, silent = true })
 
@@ -183,7 +197,8 @@ function M.toggle_sticky_note_picker()
     close()
     vim.ui.select({ "Yes", "No" }, { prompt = "Delete note?" }, function(choice)
       if choice == "Yes" then
-        vim.fn.delete(filtered[selected].file); M.toggle_sticky_note_picker()
+        vim.fn.delete(filtered[selected].file)
+        M.toggle_sticky_note_picker()
       end
     end)
   end, { buffer = buf, silent = true })
@@ -191,8 +206,8 @@ function M.toggle_sticky_note_picker()
   vim.keymap.set("n", "r", function()
     if not filtered[selected] then return end
     close()
-    vim.ui.input({ prompt = "New name: ", default = filtered[selected].name }, function(new_name)
-      if new_name and new_name ~= filtered[selected].name then
+    vim.ui.input({ prompt = "New name: ", default = filtered[selected].raw }, function(new_name)
+      if new_name and new_name ~= filtered[selected].raw then
         local safe = new_name:gsub("[^%w%._-]", "_"):gsub("__+", "_")
         vim.fn.rename(filtered[selected].file, sticky_dir .. "/" .. safe .. ".md")
         M.toggle_sticky_note_picker()
@@ -203,7 +218,9 @@ function M.toggle_sticky_note_picker()
   vim.keymap.set("n", "/", function()
     vim.ui.input({ prompt = "Search: " }, function(input)
       if input then
-        filtered = vim.tbl_filter(function(item) return item.name:lower():find(input:lower(), 1, true) end, items)
+        filtered = vim.tbl_filter(function(item)
+          return item.raw:lower():find(input:lower(), 1, true)
+        end, items)
         selected = 1
         render()
       end
