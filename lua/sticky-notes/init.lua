@@ -125,68 +125,25 @@ function M.toggle_sticky_note_picker()
   for _, file in ipairs(files) do
     local stat = vim.loop.fs_stat(file)
     local modified = stat and os.date("%Y-%m-%d %H:%M", stat.mtime.sec) or "Unknown"
-    local content = vim.fn.readfile(file)
-    local word_count = 0
-    for _, line in ipairs(content) do
-      word_count = word_count + #vim.split(line, "%s+")
-    end
-
     table.insert(items, {
       file = file,
       name = vim.fn.fnamemodify(file, ":t:r"):gsub("_", "/"),
       modified = modified,
-      word_count = word_count,
     })
   end
 
-  local buf = vim.api.nvim_create_buf(false, true)
-  local win_width = 80
-  local win_height = math.min(#items + 5, 20)
+  local current_selection = nil
 
-  local win = vim.api.nvim_open_win(buf, true, {
-    relative = "editor",
-    width = win_width,
-    height = win_height,
-    row = math.floor((vim.o.lines - win_height) / 2),
-    col = math.floor((vim.o.columns - win_width) / 2),
-    style = "minimal",
-    border = "rounded",
-    title = " Sticky Notes ",
-    title_pos = "center",
-  })
-
-  local lines = {}
-  table.insert(lines, "? for keybinds")
-  table.insert(lines, "")
-  for i, item in ipairs(items) do
-    local display = string.format("%d. %-35s %10s  %s", i, item.name, item.modified, item.word_count .. "w")
-    table.insert(lines, display)
+  local function format_item(item)
+    return item.name .. "                                    " .. item.modified
   end
 
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.api.nvim_set_option_value("filetype", "markdown", { buf = buf })
-  vim.api.nvim_buf_set_option(buf, "modifiable", false)
-
-  local selected_idx = nil
-
-  local function show_keybinds()
-    vim.notify(
-      "Keybinds:\n" ..
-      "1-9: Open note\n" ..
-      "r: Rename\n" ..
-      "d: Delete\n" ..
-      "?: Show this help\n" ..
-      "q/<Esc>: Close",
-      vim.log.levels.INFO
-    )
-  end
-
-  local function rename_note()
-    if not selected_idx then
-      vim.notify("Select a note first", vim.log.levels.WARN)
+  local function rename_selected()
+    if not current_selection then
+      vim.notify("No note selected", vim.log.levels.WARN)
       return
     end
-    local item = items[selected_idx]
+    local item = items[current_selection]
     vim.ui.input({ prompt = "New name: ", default = item.name }, function(new_name)
       if new_name and new_name ~= item.name then
         local new_safe_name = new_name:gsub("[^%w%._-]", "_"):gsub("__+", "_")
@@ -196,7 +153,6 @@ function M.toggle_sticky_note_picker()
         end)
         if success then
           vim.notify("Renamed to: " .. new_name, vim.log.levels.INFO)
-          vim.api.nvim_win_close(win, true)
           M.toggle_sticky_note_picker()
         else
           vim.notify("Failed to rename: " .. tostring(err), vim.log.levels.ERROR)
@@ -205,12 +161,12 @@ function M.toggle_sticky_note_picker()
     end)
   end
 
-  local function delete_note()
-    if not selected_idx then
-      vim.notify("Select a note first", vim.log.levels.WARN)
+  local function delete_selected()
+    if not current_selection then
+      vim.notify("No note selected", vim.log.levels.WARN)
       return
     end
-    local item = items[selected_idx]
+    local item = items[current_selection]
     vim.ui.select({ "Yes", "No" }, {
       prompt = "Delete " .. item.name .. "?",
     }, function(choice)
@@ -220,7 +176,6 @@ function M.toggle_sticky_note_picker()
         end)
         if success then
           vim.notify("Deleted: " .. item.name, vim.log.levels.INFO)
-          vim.api.nvim_win_close(win, true)
           M.toggle_sticky_note_picker()
         else
           vim.notify("Failed to delete: " .. tostring(err), vim.log.levels.ERROR)
@@ -229,42 +184,21 @@ function M.toggle_sticky_note_picker()
     end)
   end
 
-  local function open_selected()
-    if selected_idx then
-      local item = items[selected_idx]
-      vim.api.nvim_win_close(win, true)
-      open_note_in_float(item.file, item.name)
+  vim.ui.select(items, {
+    prompt = "Sticky Notes",
+    format_item = format_item,
+  }, function(choice)
+    if choice then
+      current_selection = choice
+      open_note_in_float(choice.file, choice.name)
     end
-  end
+  end)
 
-  -- Keymaps
-  for i = 1, 9 do
-    vim.keymap.set("n", tostring(i), function()
-      if i <= #items then
-        selected_idx = i
-        open_selected()
-      end
-    end, { buffer = buf, silent = true })
-  end
-
-  vim.keymap.set("n", "r", rename_note, { buffer = buf, silent = true })
-  vim.keymap.set("n", "d", delete_note, { buffer = buf, silent = true })
-  vim.keymap.set("n", "?", show_keybinds, { buffer = buf, silent = true })
-  vim.keymap.set("n", "<CR>", open_selected, { buffer = buf, silent = true })
-  vim.keymap.set("n", "q", function() vim.api.nvim_win_close(win, true) end, { buffer = buf, silent = true })
-  vim.keymap.set("n", "<Esc>", function() vim.api.nvim_win_close(win, true) end, { buffer = buf, silent = true })
-  vim.keymap.set("n", "j", function()
-    if selected_idx and selected_idx < #items then
-      selected_idx = selected_idx + 1
-    elseif not selected_idx and #items > 0 then
-      selected_idx = 1
-    end
-  end, { buffer = buf, silent = true })
-  vim.keymap.set("n", "k", function()
-    if selected_idx and selected_idx > 1 then
-      selected_idx = selected_idx - 1
-    end
-  end, { buffer = buf, silent = true })
+  -- Store reference to check for d/r after selection
+  vim.defer_fn(function()
+    vim.keymap.set("n", "d", delete_selected, { noremap = true, silent = true })
+    vim.keymap.set("n", "r", rename_selected, { noremap = true, silent = true })
+  end, 10)
 end
 
 -- Setup
