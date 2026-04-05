@@ -70,23 +70,8 @@ local function open_note_in_float(file, title)
     end
   end, { buffer = buf, noremap = true, silent = true })
 
-  -- Tab toggles checkbox
-  vim.keymap.set("n", "<Tab>", function()
-    local line = vim.api.nvim_get_current_line()
-    local new_line = line
-    if line:match("%[ %]") then
-      new_line = line:gsub("%[ %]", "[x]", 1)
-    elseif line:match("%[x%]") then
-      new_line = line:gsub("%[x%]", "[ ]", 1)
-    end
-
-    if new_line ~= line then
-      vim.api.nvim_set_current_line(new_line)
-    end
-  end, { buffer = buf, noremap = true, silent = true })
-
-  vim.cmd("startinsert")
-end
+-- Replace your current Tab mapping with this robust one-liner:
+vim.keymap.set("n", "<Tab>", [[:s/\[ \]/\[x\]/e | s/\[x\]/\[ \]/e | nohlsearch<CR>]], { buffer = buf, silent = true })
 
 -- ====================== Public API ======================
 
