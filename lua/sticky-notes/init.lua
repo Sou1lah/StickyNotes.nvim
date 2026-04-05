@@ -283,12 +283,4 @@ function M.setup(opts)
   end
 end
 
--- ============================================================================
--- Vim Pack / Native Support (Auto setup)
--- ============================================================================
-if vim.g.loaded_sticky_notes == nil then
-  vim.g.loaded_sticky_notes = true
-  M.setup()
-end
-
 return M
