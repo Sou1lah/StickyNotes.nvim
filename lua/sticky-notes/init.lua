@@ -1,5 +1,5 @@
 -- ============================================================================
--- STICKY NOTES PLUGIN - Fixed + Better Picker UI
+-- STICKY NOTES PLUGIN - Fixed + Arrow Keys + Better Movements
 -- ============================================================================
 local M = {}
 
@@ -42,7 +42,6 @@ local function open_note_in_float(file, title)
     title_pos = "center",
   })
 
-  -- Auto save
   local function save()
     pcall(vim.fn.writefile, vim.api.nvim_buf_get_lines(buf, 0, -1, false), file)
   end
@@ -129,7 +128,7 @@ function M.toggle_sticky_note_picker()
   local show_help = false
 
   local function render()
-    vim.api.nvim_buf_set_option(buf, "modifiable", true) -- ← Fixed here
+    vim.api.nvim_buf_set_option(buf, "modifiable", true)
 
     local lines = {}
 
@@ -146,7 +145,7 @@ function M.toggle_sticky_note_picker()
       table.insert(lines, prefix .. name .. string.rep(" ", padding) .. item.modified)
     end
 
-    -- Fill space
+    -- Fill empty lines
     while #lines < win_height - 3 do
       table.insert(lines, "")
     end
@@ -155,15 +154,15 @@ function M.toggle_sticky_note_picker()
     table.insert(lines, string.rep("─", win_width - 2))
     if show_help then
       table.insert(lines,
-        "  j/k : Navigate    <CR> : Open    d : Delete    r : Rename    / : Search    ? : Toggle help    q : Quit")
+        "  ↑↓/jk : Move    <CR> : Open    d : Delete    r : Rename    / : Search    ? : Help    q : Quit")
     else
       table.insert(lines, "  Press ? for shortcuts")
     end
 
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    vim.api.nvim_buf_set_option(buf, "modifiable", false) -- ← Back to false
+    vim.api.nvim_buf_set_option(buf, "modifiable", false)
 
-    -- Highlight selected
+    -- Highlight
     vim.api.nvim_buf_clear_namespace(buf, -1, 0, -1)
     vim.api.nvim_buf_add_highlight(buf, 0, "Visual", selected + 1, 0, -1)
   end
@@ -174,9 +173,27 @@ function M.toggle_sticky_note_picker()
     pcall(vim.api.nvim_win_close, win, true)
   end
 
-  -- Keymaps
-  vim.keymap.set("n", "q", close, { buffer = buf, silent = true })
-  vim.keymap.set("n", "<Esc>", close, { buffer = buf, silent = true })
+  -- ==================== Keymaps ====================
+  local function move(delta)
+    selected = math.max(1, math.min(#filtered, selected + delta))
+    render()
+  end
+
+  vim.keymap.set("n", "j", function() move(1) end, { buffer = buf, silent = true })
+  vim.keymap.set("n", "k", function() move(-1) end, { buffer = buf, silent = true })
+  vim.keymap.set("n", "<Down>", function() move(1) end, { buffer = buf, silent = true })
+  vim.keymap.set("n", "<Up>", function() move(-1) end, { buffer = buf, silent = true })
+
+  vim.keymap.set("n", "<C-d>", function() move(5) end, { buffer = buf, silent = true })
+  vim.keymap.set("n", "<C-u>", function() move(-5) end, { buffer = buf, silent = true })
+
+  vim.keymap.set("n", "gg", function()
+    selected = 1; render()
+  end, { buffer = buf, silent = true })
+  vim.keymap.set("n", "G", function()
+    selected = #filtered; render()
+  end, { buffer = buf, silent = true })
+
   vim.keymap.set("n", "<CR>", function()
     if filtered[selected] then
       close()
@@ -184,16 +201,10 @@ function M.toggle_sticky_note_picker()
     end
   end, { buffer = buf, silent = true })
 
-  vim.keymap.set("n", "j", function()
-    selected = math.min(#filtered, selected + 1)
-    render()
-  end, { buffer = buf, silent = true })
+  vim.keymap.set("n", "q", close, { buffer = buf, silent = true })
+  vim.keymap.set("n", "<Esc>", close, { buffer = buf, silent = true })
 
-  vim.keymap.set("n", "k", function()
-    selected = math.max(1, selected - 1)
-    render()
-  end, { buffer = buf, silent = true })
-
+  -- Delete & Rename
   vim.keymap.set("n", "d", function()
     if not filtered[selected] then return end
     close()
@@ -217,6 +228,7 @@ function M.toggle_sticky_note_picker()
     end)
   end, { buffer = buf, silent = true })
 
+  -- Search
   vim.keymap.set("n", "/", function()
     vim.ui.input({ prompt = "Search: " }, function(input)
       if input then
@@ -229,6 +241,7 @@ function M.toggle_sticky_note_picker()
     end)
   end, { buffer = buf, silent = true })
 
+  -- Help
   vim.keymap.set("n", "?", function()
     show_help = not show_help
     render()
