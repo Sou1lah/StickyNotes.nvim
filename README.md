@@ -82,13 +82,11 @@ MIT — See LICENSE file
 Issues and pull requests welcome on GitHub.
 
 ---
-
 ## Stats
 
 [![GitHub stars](https://img.shields.io/github/stars/Sou1lah/StickyNotes.nvim?style=flat-square&logo=github)](https://github.com/Sou1lah/StickyNotes.nvim)
 [![GitHub forks](https://img.shields.io/github/forks/Sou1lah/StickyNotes.nvim?style=flat-square&logo=github)](https://github.com/Sou1lah/StickyNotes.nvim)
 [![GitHub issues](https://img.shields.io/github/issues/Sou1lah/StickyNotes.nvim?style=flat-square&logo=github)](https://github.com/Sou1lah/StickyNotes.nvim/issues)
 [![License](https://img.shields.io/github/license/Sou1lah/StickyNotes.nvim?style=flat-square)](https://github.com/Sou1lah/StickyNotes.nvim/blob/main/LICENSE)
-[![Last commit](https://img.shields.io/github/last-commit/Sou1lah/StickyNotes.nvim?style=flat-square&logo=github)](https://github.com/Sou1lah/StickyNotes.nvim/commits/main)
-[![Neovim](https://img.shields.io/badge/Neovim-0.7+-green?style=flat-square&logo=neovim)](https://neovim.io)
+![Repo Views](https://komarev.com/ghpvc/?username=Sou1lah-StickyNotes&color=dc143c)
 
