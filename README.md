@@ -92,4 +92,3 @@ Issues and pull requests welcome on GitHub.
 [![Last commit](https://img.shields.io/github/last-commit/Sou1lah/StickyNotes.nvim?style=flat-square&logo=github)](https://github.com/Sou1lah/StickyNotes.nvim/commits/main)
 [![Neovim](https://img.shields.io/badge/Neovim-0.7+-green?style=flat-square&logo=neovim)](https://neovim.io)
 
-GitHub: [Sou1lah/StickyNotes.nvim](https://github.com/Sou1lah/StickyNotes.nvim)
