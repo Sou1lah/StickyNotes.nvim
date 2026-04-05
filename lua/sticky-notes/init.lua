@@ -71,19 +71,13 @@ local function open_note_in_float(file, title)
 
   -- Tab toggles checkbox
   vim.keymap.set("n", "<Tab>", function()
-    local row = vim.fn.line(".") - 1
     local line = vim.fn.getline(".")
-    local new_line = line
-
-    if line:match("%- %[%s%]") then
-      new_line = line:gsub("%- %[%s%]", "- [x]", 1)
+    if line:match("%- %[ %]") then
+      vim.fn.setline(".", line:gsub("%- %[ %]", "- [x]", 1))
     elseif line:match("%- %[x%]") then
-      new_line = line:gsub("%- %[x%]", "- [ ]", 1)
+      vim.fn.setline(".", line:gsub("%- %[x%]", "- [ ]", 1))
     end
-
-    vim.api.nvim_buf_set_lines(buf, row, row + 1, false, { new_line })
   end, { buffer = buf, noremap = true })
-
 
   vim.cmd("startinsert")
 end
