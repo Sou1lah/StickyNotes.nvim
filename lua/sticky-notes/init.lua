@@ -254,28 +254,42 @@ function M.toggle_sticky_note_picker()
       end
     end, { buffer = buf, silent = true })
 
+    -- Helper to find index in items
+    local function find_item_index(item)
+      for i, v in ipairs(items) do
+        if v.file == item.file then return i end
+      end
+      return nil
+    end
+
     -- Delete
     vim.keymap.set("n", "d", function()
       if filtered[selected] then
         close()
-        delete_selected(vim.tbl_indexof(items, filtered[selected]))
+        local idx = find_item_index(filtered[selected])
+        if idx then delete_selected(idx) end
       end
     end, { buffer = buf, silent = true })
     -- Rename
     vim.keymap.set("n", "r", function()
       if filtered[selected] then
         close()
-        rename_selected(vim.tbl_indexof(items, filtered[selected]))
+        local idx = find_item_index(filtered[selected])
+        if idx then rename_selected(idx) end
       end
     end, { buffer = buf, silent = true })
 
-    -- Search mode
-    vim.keymap.set("n", "/", function()
+    -- Search bar at the top (restore old look)
+    local function show_search_bar()
       vim.api.nvim_buf_set_option(buf, "modifiable", true)
-      vim.api.nvim_buf_set_lines(buf, 0, -1, false, {"/" .. search})
+      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+      table.insert(lines, 1, "/" .. search)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
       vim.api.nvim_win_set_cursor(win, {1, #search+1})
       vim.cmd("startinsert!")
-    end, { buffer = buf, silent = true })
+    end
+
+    vim.keymap.set("n", "/", show_search_bar, { buffer = buf, silent = true })
 
     vim.api.nvim_create_autocmd("InsertLeave", {
       buffer = buf,
@@ -285,10 +299,41 @@ function M.toggle_sticky_note_picker()
           search = line:sub(2)
           update_filtered()
         end
+        -- Remove search bar line
+        local lines = vim.api.nvim_buf_get_lines(buf, 1, -1, false)
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
         vim.api.nvim_buf_set_option(buf, "modifiable", false)
         render()
       end,
     })
+
+    -- Visually improve UI: highlight selected, add border lines
+    local function render_pretty()
+      local lines = {}
+      table.insert(lines, string.rep("─", win_width))
+      for i, item in ipairs(filtered) do
+        local prefix = (i == selected) and "> " or "  "
+        local line = prefix .. format_item(item)
+        if #line < win_width then
+          line = line .. string.rep(" ", win_width - #line)
+        end
+        table.insert(lines, line)
+      end
+      while #lines < win_height do
+        table.insert(lines, string.rep(" ", win_width))
+      end
+      table.insert(lines, string.rep("─", win_width))
+      vim.api.nvim_buf_set_option(buf, "modifiable", true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+      vim.api.nvim_buf_set_option(buf, "modifiable", false)
+      -- Highlight selected line
+      vim.api.nvim_buf_clear_namespace(buf, -1, 0, -1)
+      if filtered[selected] then
+        vim.api.nvim_buf_add_highlight(buf, 0, "Visual", selected, 0, -1)
+      end
+    end
+    render = render_pretty
+    render()
   end
 
   simple_picker()
