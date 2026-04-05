@@ -122,28 +122,29 @@ function M.toggle_sticky_note_picker()
   end
 
   local items = {}
+  local max_name = 0
   for _, file in ipairs(files) do
     local stat = vim.loop.fs_stat(file)
     local modified = stat and os.date("%Y-%m-%d %H:%M", stat.mtime.sec) or "Unknown"
+    local name = vim.fn.fnamemodify(file, ":t:r"):gsub("_", "/")
+    if #name > max_name then max_name = #name end
     table.insert(items, {
       file = file,
-      name = vim.fn.fnamemodify(file, ":t:r"):gsub("_", "/"),
+      name = name,
       modified = modified,
     })
   end
 
   local current_selection = nil
 
+  -- Format: name (left), date (right)
   local function format_item(item)
-    return item.name .. "                                    " .. item.modified
+    local pad = max_name - #item.name + 2
+    return item.name .. string.rep(" ", pad) .. item.modified
   end
 
-  local function rename_selected()
-    if not current_selection then
-      vim.notify("No note selected", vim.log.levels.WARN)
-      return
-    end
-    local item = items[current_selection]
+  local function rename_selected(idx)
+    local item = items[idx]
     vim.ui.input({ prompt = "New name: ", default = item.name }, function(new_name)
       if new_name and new_name ~= item.name then
         local new_safe_name = new_name:gsub("[^%w%._-]", "_"):gsub("__+", "_")
@@ -161,12 +162,8 @@ function M.toggle_sticky_note_picker()
     end)
   end
 
-  local function delete_selected()
-    if not current_selection then
-      vim.notify("No note selected", vim.log.levels.WARN)
-      return
-    end
-    local item = items[current_selection]
+  local function delete_selected(idx)
+    local item = items[idx]
     vim.ui.select({ "Yes", "No" }, {
       prompt = "Delete " .. item.name .. "?",
     }, function(choice)
@@ -184,21 +181,117 @@ function M.toggle_sticky_note_picker()
     end)
   end
 
-  vim.ui.select(items, {
-    prompt = "Sticky Notes",
-    format_item = format_item,
-  }, function(choice)
-    if choice then
-      current_selection = choice
-      open_note_in_float(choice.file, choice.name)
-    end
-  end)
+  -- Custom simple picker (restores old look, supports d/r/ and / for search)
+  local function simple_picker()
+    local buf = vim.api.nvim_create_buf(false, true)
+    local win_height = math.min(#items, 15)
+    local win_width = math.max(40, max_name + 22)
+    local win = vim.api.nvim_open_win(buf, true, {
+      relative = "editor",
+      width = win_width,
+      height = win_height,
+      row = math.floor((vim.o.lines - win_height) / 2),
+      col = math.floor((vim.o.columns - win_width) / 2),
+      style = "minimal",
+      border = "rounded",
+      title = " Sticky Notes ",
+      title_pos = "center",
+    })
 
-  -- Store reference to check for d/r after selection
-  vim.defer_fn(function()
-    vim.keymap.set("n", "d", delete_selected, { noremap = true, silent = true })
-    vim.keymap.set("n", "r", rename_selected, { noremap = true, silent = true })
-  end, 10)
+    local filtered = vim.deepcopy(items)
+    local search = ""
+    local selected = 1
+
+    local function render()
+      local lines = {}
+      for i, item in ipairs(filtered) do
+        local prefix = (i == selected) and "> " or "  "
+        table.insert(lines, prefix .. format_item(item))
+      end
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    end
+
+    local function update_filtered()
+      if search == "" then
+        filtered = vim.deepcopy(items)
+      else
+        filtered = {}
+        for _, item in ipairs(items) do
+          if item.name:lower():find(search:lower(), 1, true) then
+            table.insert(filtered, item)
+          end
+        end
+      end
+      if selected > #filtered then selected = #filtered end
+      if selected < 1 then selected = 1 end
+      render()
+    end
+
+    render()
+
+    vim.api.nvim_buf_set_option(buf, "modifiable", false)
+    vim.api.nvim_buf_set_option(buf, "buftype", "nofile")
+    vim.api.nvim_buf_set_option(buf, "bufhidden", "wipe")
+
+    local function close()
+      pcall(function() vim.api.nvim_win_close(win, true) end)
+    end
+
+    vim.keymap.set("n", "q", close, { buffer = buf, silent = true })
+    vim.keymap.set("n", "<Esc>", close, { buffer = buf, silent = true })
+
+    -- Navigation
+    vim.keymap.set("n", "j", function()
+      if selected < #filtered then selected = selected + 1; render() end
+    end, { buffer = buf, silent = true })
+    vim.keymap.set("n", "k", function()
+      if selected > 1 then selected = selected - 1; render() end
+    end, { buffer = buf, silent = true })
+    vim.keymap.set("n", "<CR>", function()
+      if filtered[selected] then
+        close()
+        open_note_in_float(filtered[selected].file, filtered[selected].name)
+      end
+    end, { buffer = buf, silent = true })
+
+    -- Delete
+    vim.keymap.set("n", "d", function()
+      if filtered[selected] then
+        close()
+        delete_selected(vim.tbl_indexof(items, filtered[selected]))
+      end
+    end, { buffer = buf, silent = true })
+    -- Rename
+    vim.keymap.set("n", "r", function()
+      if filtered[selected] then
+        close()
+        rename_selected(vim.tbl_indexof(items, filtered[selected]))
+      end
+    end, { buffer = buf, silent = true })
+
+    -- Search mode
+    vim.keymap.set("n", "/", function()
+      vim.api.nvim_buf_set_option(buf, "modifiable", true)
+      vim.api.nvim_buf_set_lines(buf, 0, -1, false, {"/" .. search})
+      vim.api.nvim_win_set_cursor(win, {1, #search+1})
+      vim.cmd("startinsert!")
+    end, { buffer = buf, silent = true })
+
+    vim.api.nvim_create_autocmd("InsertLeave", {
+      buffer = buf,
+      callback = function()
+        local line = vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] or ""
+        if line:sub(1,1) == "/" then
+          search = line:sub(2)
+          update_filtered()
+        end
+        vim.api.nvim_buf_set_option(buf, "modifiable", false)
+        render()
+      end,
+    })
+  end
+
+  simple_picker()
 end
 
 -- Setup
