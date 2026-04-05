@@ -1,4 +1,5 @@
-# Sticky Notes for Neovim 📝
+# Sticky Notes for Neovim 
+> give a star ⭐ if u like
 
 A lightweight plugin that gives you **project-specific sticky notes** in Neovim.
 
@@ -13,9 +14,8 @@ A lightweight plugin that gives you **project-specific sticky notes** in Neovim.
 
 ## Installation
 
-## Installation
-
 ### With Lazy.nvim
+
 Add this block to your Lazy.nvim spec (e.g. `~/.config/nvim/lua/plugins/`):
 
 ```lua
@@ -35,13 +35,61 @@ Add this block to your Lazy.nvim spec (e.g. `~/.config/nvim/lua/plugins/`):
 },
 ```
 
-### With vim.pack (native package)
-Clone or symlink this repo into `~/.config/nvim/pack/plugins/start/sticky-notes.nvim` (or any `pack/*/start/` directory). It will auto-load via the `plugin/` directory.
+### vim.pack (Native Neovim Package Manager)
 
-**Do not** call `require("sticky-notes").setup()` manually in your `init.lua` for either method.
+vim.pack is Neovim's built-in package manager. Installation is simple git cloning.
 
-### Testing
-- For **vim.pack**: Restart Neovim, run `:Lazy clean` if switching from Lazy.nvim, and check `:messages` for errors.
-- For **Lazy.nvim**: Use the config above, restart Neovim, and check that `<leader>mn` and `<leader>ms` work.
+**Install:**
 
-**Note:** No double-initialization will occur. Both methods are supported and can be switched between without conflicts.
+```bash
+mkdir -p ~/.config/nvim/pack/plugins/start
+cd ~/.config/nvim/pack/plugins/start
+git clone https://github.com/Sou1lah/StickyNotes.nvim.git sticky-notes
+```
+
+**Uninstall:**
+
+```bash
+rm -rf ~/.config/nvim/pack/plugins/start/sticky-notes
+```
+
+**How it works:**
+
+- Neovim automatically loads all plugins in `pack/*/start/` on startup
+- No configuration needed — plugin works out of the box
+- Default keymaps: `<leader>mn` (open note), `<leader>ms` (picker)
+
+## Usage
+
+### Commands
+
+- `:StickyNote` — Open/create note for current directory
+- `:StickyNotePicker` — Browse all notes with search
+
+### Keymaps
+
+- `<leader>mn` — Open sticky note
+- `<leader>ms` — Open note picker
+- `<Tab>` — Toggle checkbox (in note)
+- `q` / `<Esc>` — Close window
+
+## License
+
+MIT — See LICENSE file
+
+## Contributing
+
+Issues and pull requests welcome on GitHub.
+
+---
+
+## Stats
+
+[![GitHub stars](https://img.shields.io/github/stars/Sou1lah/StickyNotes.nvim?style=flat-square&logo=github)](https://github.com/Sou1lah/StickyNotes.nvim)
+[![GitHub forks](https://img.shields.io/github/forks/Sou1lah/StickyNotes.nvim?style=flat-square&logo=github)](https://github.com/Sou1lah/StickyNotes.nvim)
+[![GitHub issues](https://img.shields.io/github/issues/Sou1lah/StickyNotes.nvim?style=flat-square&logo=github)](https://github.com/Sou1lah/StickyNotes.nvim/issues)
+[![License](https://img.shields.io/github/license/Sou1lah/StickyNotes.nvim?style=flat-square)](https://github.com/Sou1lah/StickyNotes.nvim/blob/main/LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/Sou1lah/StickyNotes.nvim?style=flat-square&logo=github)](https://github.com/Sou1lah/StickyNotes.nvim/commits/main)
+[![Neovim](https://img.shields.io/badge/Neovim-0.7+-green?style=flat-square&logo=neovim)](https://neovim.io)
+
+GitHub: [Sou1lah/StickyNotes.nvim](https://github.com/Sou1lah/StickyNotes.nvim)
