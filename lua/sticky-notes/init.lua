@@ -1,5 +1,5 @@
 -- ============================================================================
--- STICKY NOTES PLUGIN - Custom Names + Path in Picker
+-- STICKY NOTES PLUGIN - Right Aligned Date + Full Path
 -- ============================================================================
 local M = {}
 
@@ -11,28 +11,18 @@ local function get_safe_filename(cwd)
   return cwd:gsub("[^%w%._-]", "_"):gsub("__+", "_")
 end
 
--- Read custom title from first line of note (if exists)
 local function get_custom_title(file)
   if vim.fn.filereadable(file) == 0 then return nil end
-  local first_line = vim.fn.readfile(file, "", 1)[1] or ""
-  if first_line:match("^#%s+") then
-    return first_line:gsub("^#%s+", ""):gsub("^%s+", ""):gsub("%s+$", "")
-  end
-  return nil
+  local first = vim.fn.readfile(file, "", 1)[1] or ""
+  return first:match("^#%s+(.*)") and first:match("^#%s+(.*)"):gsub("^%s+", ""):gsub("%s+$", "") or nil
 end
 
 -- ====================== Note Window ======================
 local function open_note_in_float(file, default_title)
   local lines = vim.fn.filereadable(file) == 1 and vim.fn.readfile(file) or {
-    "# " .. (default_title or "New Note"),
-    "",
-    "## Tasks",
-    "- [ ] Task 1",
-    "- [ ] Task 2",
-    "",
-    "----------------------------------------",
-    "## Notes",
-    "> Start typing here...",
+    "# " .. (default_title or "New Note"), "", "## Tasks",
+    "- [ ] Task 1", "- [ ] Task 2", "", "----------------------------------------",
+    "## Notes", "> Start typing here...",
   }
 
   local buf = vim.api.nvim_create_buf(false, true)
@@ -56,7 +46,6 @@ local function open_note_in_float(file, default_title)
     title_pos = "center",
   })
 
-  -- Auto save
   local function save()
     pcall(vim.fn.writefile, vim.api.nvim_buf_get_lines(buf, 0, -1, false), file)
   end
@@ -83,21 +72,20 @@ local function open_note_in_float(file, default_title)
     vim.api.nvim_set_current_line(toggled)
   end, { buffer = buf, silent = true })
 
-  -- Word count + Path in bottom center
+  -- Word count + Path at bottom center
   local function update_status()
     local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local count = 0
     for _, line in ipairs(content) do
       for _ in line:gmatch("%S+") do count = count + 1 end
     end
-    local path_hint = vim.fn.fnamemodify(file, ":t:r"):gsub("_", "/")
-    vim.wo[win].statusline = "%= " .. path_hint .. "   |   Words: " .. count .. " %="
+    local path = vim.fn.fnamemodify(file, ":t:r"):gsub("_", "/")
+    vim.wo[win].statusline = "%= " .. path .. "   |   Words: " .. count .. " %="
   end
 
   update_status()
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "CursorMoved" }, {
-    buffer = buf,
-    callback = update_status,
+    buffer = buf, callback = update_status
   })
 end
 
@@ -115,10 +103,11 @@ function M.toggle_sticky_note_picker()
     local modified = stat and os.date("%Y-%m-%d %H:%M", stat.mtime.sec) or "Unknown"
     local path_name = vim.fn.fnamemodify(file, ":t:r"):gsub("_", "/")
     local custom = get_custom_title(file)
+    local display = custom and (custom .. "  →  " .. path_name) or path_name
 
     table.insert(items, {
       file = file,
-      display = custom and (custom .. "  →  " .. path_name) or path_name,
+      display = display,
       path_name = path_name,
       modified = modified,
     })
@@ -148,15 +137,24 @@ function M.toggle_sticky_note_picker()
     vim.api.nvim_buf_set_option(buf, "modifiable", true)
     local lines = {}
 
-    table.insert(lines, "  Note Name" .. string.rep(" ", 28) .. "Last Modified")
+    -- Header
+    table.insert(lines, "  Note" .. string.rep(" ", win_width - 28) .. "Last Modified")
     table.insert(lines, string.rep("─", win_width - 2))
 
+    -- Items with right-aligned date
     for i, item in ipairs(filtered) do
       local prefix = (i == selected) and " → " or "   "
       local name = item.display
-      if #name > 38 then name = name:sub(1, 35) .. "..." end
-      local padding = win_width - #prefix - #name - #item.modified - 4
-      table.insert(lines, prefix .. name .. string.rep(" ", padding) .. item.modified)
+      local date = item.modified
+
+      -- Truncate name to prevent overlap
+      local max_name_len = win_width - #date - 12
+      if #name > max_name_len then
+        name = name:sub(1, max_name_len - 3) .. "..."
+      end
+
+      local padding = win_width - #prefix - #name - #date - 3
+      table.insert(lines, prefix .. name .. string.rep(" ", padding) .. date)
     end
 
     while #lines < win_height - 4 do table.insert(lines, "") end
@@ -199,21 +197,16 @@ function M.toggle_sticky_note_picker()
   vim.keymap.set("n", "q", close, { buffer = buf, silent = true })
   vim.keymap.set("n", "<Esc>", close, { buffer = buf, silent = true })
 
-  -- Rename with custom name (supports spaces!)
   vim.keymap.set("n", "r", function()
     if not filtered[selected] then return end
     close()
     vim.ui.input({
-      prompt = "New custom name (spaces allowed): ",
+      prompt = "Custom name (spaces allowed): ",
       default = get_custom_title(filtered[selected].file) or filtered[selected].path_name
     }, function(new_name)
       if new_name and new_name ~= "" then
         local content = vim.fn.readfile(filtered[selected].file)
-        if #content > 0 and content[1]:match("^#") then
-          content[1] = "# " .. new_name
-        else
-          table.insert(content, 1, "# " .. new_name)
-        end
+        content[1] = "# " .. new_name
         vim.fn.writefile(content, filtered[selected].file)
         M.toggle_sticky_note_picker()
       end
@@ -223,10 +216,9 @@ function M.toggle_sticky_note_picker()
   vim.keymap.set("n", "d", function()
     if not filtered[selected] then return end
     close()
-    vim.ui.select({ "Yes", "No" }, { prompt = "Delete note?" }, function(choice)
+    vim.ui.select({ "Yes", "No" }, { prompt = "Delete?" }, function(choice)
       if choice == "Yes" then
-        vim.fn.delete(filtered[selected].file)
-        M.toggle_sticky_note_picker()
+        vim.fn.delete(filtered[selected].file); M.toggle_sticky_note_picker()
       end
     end)
   end, { buffer = buf, silent = true })
