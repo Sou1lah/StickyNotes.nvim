@@ -1,5 +1,5 @@
 -- ============================================================================
--- STICKY NOTES PLUGIN
+-- STICKY NOTES PLUGIN (FIXED)
 -- ============================================================================
 local M = {}
 
@@ -26,7 +26,7 @@ local function open_note_in_float(file, title)
 
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.api.nvim_buf_set_option(buf, "filetype", "markdown")
+  vim.api.nvim_set_option_value("filetype", "markdown", { buf = buf })
 
   local width = math.floor(vim.o.columns * 0.65)
   local height = math.floor(vim.o.lines * 0.55)
@@ -43,10 +43,15 @@ local function open_note_in_float(file, title)
     title_pos = "center",
   })
 
-  -- Auto save
+  -- Auto save with error handling
   local save = function()
     local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-    vim.fn.writefile(content, file)
+    local success, err = pcall(function()
+      vim.fn.writefile(content, file)
+    end)
+    if not success then
+      vim.notify("Failed to save note: " .. tostring(err), vim.log.levels.ERROR)
+    end
   end
 
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "BufLeave" }, {
@@ -54,24 +59,34 @@ local function open_note_in_float(file, title)
     callback = save,
   })
 
-  -- Better close mappings
-  vim.keymap.set("n", "q", function() vim.api.nvim_win_close(win, true) end, { buffer = buf, silent = true })
-  vim.keymap.set("n", "<Esc>", function() vim.api.nvim_win_close(win, true) end, { buffer = buf, silent = true })
+  -- Close mappings
+  local function close_window()
+    pcall(function() vim.api.nvim_win_close(win, true) end)
+  end
+
+  vim.keymap.set("n", "q", close_window, { buffer = buf, silent = true })
+  vim.keymap.set("n", "<Esc>", close_window, { buffer = buf, silent = true })
   vim.keymap.set("i", "<C-c>", "<Esc>", { buffer = buf, silent = true })
 
   -- Enter creates new checkbox line
   vim.keymap.set("i", "<CR>", function()
     local line = vim.api.nvim_get_current_line()
-    -- Matches any indentation + checkbox marker
-    if line:match("^%s*%- %[.%]") then
+    if line:match("^%s*%- %[[^%]]*%]") then
       vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>- [ ] ", true, true, true), "n", false)
     else
       vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, true, true), "n", false)
     end
   end, { buffer = buf, noremap = true, silent = true })
 
--- Replace your current Tab mapping with this robust one-liner:
-vim.keymap.set("n", "<Tab>", [[:s/\[ \]/\[x\]/e | s/\[x\]/\[ \]/e | nohlsearch<CR>]], { buffer = buf, silent = true })
+  -- Tab toggle checkbox
+  vim.keymap.set("n", "<Tab>", function()
+    local line = vim.api.nvim_get_current_line()
+    local toggled = line:gsub("%[[ x]%]", function(match)
+      return match == "[ ]" and "[x]" or "[ ]"
+    end)
+    vim.api.nvim_set_current_line(toggled)
+  end, { buffer = buf, silent = true })
+end
 
 -- ====================== Public API ======================
 
@@ -90,16 +105,22 @@ function M.toggle_sticky_note_picker()
     return
   end
 
-  vim.ui.select(files, {
+  local items = {}
+  for _, file in ipairs(files) do
+    table.insert(items, {
+      file = file,
+      name = vim.fn.fnamemodify(file, ":t:r"):gsub("_", "/"),
+    })
+  end
+
+  vim.ui.select(items, {
     prompt = "Sticky Notes",
-    format_item = function(file)
-      local name = vim.fn.fnamemodify(file, ":t:r")
-      return name:gsub("_", "/")
+    format_item = function(item)
+      return item.name
     end,
   }, function(choice)
     if choice then
-      local title = vim.fn.fnamemodify(choice, ":t:r"):gsub("_", "/")
-      open_note_in_float(choice, title)
+      open_note_in_float(choice.file, choice.name)
     end
   end)
 end
@@ -111,15 +132,29 @@ function M.delete_sticky_note()
     return
   end
 
-  vim.ui.select(files, {
+  local items = {}
+  for _, file in ipairs(files) do
+    table.insert(items, {
+      file = file,
+      name = vim.fn.fnamemodify(file, ":t:r"):gsub("_", "/"),
+    })
+  end
+
+  vim.ui.select(items, {
     prompt = "Delete Sticky Note:",
-    format_item = function(file)
-      return vim.fn.fnamemodify(file, ":t:r"):gsub("_", "/")
+    format_item = function(item)
+      return item.name
     end,
   }, function(choice)
     if choice then
-      vim.fn.delete(choice)
-      vim.notify("Deleted: " .. vim.fn.fnamemodify(choice, ":t"), vim.log.levels.INFO)
+      local success, err = pcall(function()
+        vim.fn.delete(choice.file)
+      end)
+      if success then
+        vim.notify("Deleted: " .. choice.name, vim.log.levels.INFO)
+      else
+        vim.notify("Failed to delete: " .. tostring(err), vim.log.levels.ERROR)
+      end
     end
   end)
 end
