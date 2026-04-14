@@ -60,29 +60,29 @@ local function open_note(file, display_name)
   --- Statusline/Footer logic: path + word count
   local function update_footer()
     if not vim.api.nvim_win_is_valid(win) then return end
-
+    
     local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local words = 0
     for _, line in ipairs(content) do
       for _ in line:gmatch("%S+") do words = words + 1 end
     end
-
+    
     local path_str = vim.fn.fnamemodify(file, ":~") -- Shorten home to ~
     local word_str = "Words: " .. words
     local win_w = vim.api.nvim_win_get_width(win)
-
+    
     -- Calculate space between left-aligned path and right-aligned word count
     -- -4 accounts for border edges and internal padding
     local padding_len = win_w - #path_str - #word_str - 4
-
+    
     if padding_len < 2 then
-      path_str = vim.fn.pathshorten(path_str) -- Shorten path if it's too long
-      padding_len = win_w - #path_str - #word_str - 4
+        path_str = vim.fn.pathshorten(path_str) -- Shorten path if it's too long
+        padding_len = win_w - #path_str - #word_str - 4
     end
-
+    
     local padding = string.rep(" ", math.max(1, padding_len))
     local footer_text = " " .. path_str .. padding .. word_str .. " "
-
+    
     vim.api.nvim_win_set_config(win, {
       footer = footer_text,
       footer_pos = "left",
@@ -214,7 +214,7 @@ function M.toggle_picker()
 
     vim.api.nvim_buf_clear_namespace(buf, -1, 0, -1)
     if #filtered > 0 then
-      vim.api.nvim_buf_add_highlight(buf, 0, "Visual", selected + 1, 0, -1)
+        vim.api.nvim_buf_add_highlight(buf, 0, "Visual", selected + 1, 0, -1)
     end
   end
 
