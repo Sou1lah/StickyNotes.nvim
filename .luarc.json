@@ -1,6 +1,8 @@
 {
     "diagnostics.disable": [
         "undefined-global",
-        "redefined-local"
+        "redefined-local",
+        "unused-local",
+        "unused-function"
     ]
 }

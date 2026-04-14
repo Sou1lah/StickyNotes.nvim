@@ -1,28 +1,40 @@
 --- sticky-notes.nvim
---- GitHub: https://github.com/Sou1lah/StickyNotes.nvim
+--- Expertly crafted for a clean, productive workflow.
 
 local M = {}
-
 local uv = vim.uv or vim.loop
 local notes_dir = vim.fn.stdpath("data") .. "/sticky-notes"
 vim.fn.mkdir(notes_dir, "p")
 
---- Convert path to safe filename
+-- ----------------------------------------------------------------------------
+-- 1. Helpers & Internal Logic
+-- ----------------------------------------------------------------------------
+
 local function get_filename(cwd)
   cwd = cwd or uv.cwd() or vim.fn.getcwd()
   return cwd:gsub("[^%w%._-]", "_"):gsub("__+", "_")
 end
 
---- Get custom title from first line if it starts with #
 local function get_custom_title(filepath)
   if vim.fn.filereadable(filepath) == 0 then return nil end
   local first_line = vim.fn.readfile(filepath, "", 1)[1] or ""
   return first_line:match("^#%s+(.*)") and first_line:match("^#%s+(.*)"):gsub("^%s+", ""):gsub("%s+$", "")
 end
 
---- Open Note Window
+local function inject_timestamp(buf)
+  local time = os.date("%H:%M")
+  local str = string.format("[%s] ", time)
+  local row, col = unpack(vim.api.nvim_win_get_cursor(0))
+  vim.api.nvim_buf_set_text(buf, row - 1, col, row - 1, col, { str })
+  vim.api.nvim_win_set_cursor(0, { row, col + #str })
+end
+
+-- ----------------------------------------------------------------------------
+-- 2. Core Note Window
+-- ----------------------------------------------------------------------------
+
 local function open_note(file, display_name)
-  -- 1. Minimal Template
+  -- Minimal Template
   local lines = vim.fn.filereadable(file) == 1 and vim.fn.readfile(file) or {
     "# " .. (display_name or "New Note"),
     "",
@@ -32,26 +44,12 @@ local function open_note(file, display_name)
 
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+
+  -- Buffer Settings
   vim.api.nvim_set_option_value("filetype", "markdown", { buf = buf })
   vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = buf })
 
-  -- 2. Placeholder Logic (Virtual Text)
-  local ns_id = vim.api.nvim_create_namespace("placeholder")
-  local function update_placeholder()
-    if not vim.api.nvim_buf_is_valid(buf) then return end
-    vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
-    -- If line 3 (index 2) is empty, show placeholder
-    local target_line = vim.api.nvim_buf_get_lines(buf, 2, 3, false)[1] or ""
-    if #target_line <= 6 then -- "- [ ] " is 6 chars
-      vim.api.nvim_buf_set_extmark(buf, ns_id, 2, 6, {
-        virt_text = { { "  Start typing...", "Comment" } },
-        virt_text_pos = "overlay",
-      })
-    end
-  end
-
-  -- 3. Restore Window Logic
-  local title = get_custom_title(file) or display_name or "Sticky Note"
+  -- Window Dimensions
   local width = math.floor(vim.o.columns * 0.68)
   local height = math.floor(vim.o.lines * 0.58)
 
@@ -63,13 +61,31 @@ local function open_note(file, display_name)
     col = math.floor((vim.o.columns - width) / 2),
     style = "minimal",
     border = "rounded",
-    title = " " .. title .. " ",
+    title = " 󰠮 " .. (display_name or "Sticky Note") .. " ",
     title_pos = "center",
   })
 
-  -- 4. Footer & Autocmds
-  local function update_footer()
-    if not vim.api.nvim_win_is_valid(win) then return end
+  -- Visual Polish: Hyprland-style transparency and line numbers
+  vim.wo[win].winblend = 10
+  vim.wo[win].number = true
+  vim.wo[win].relativenumber = true
+
+  -- Placeholder Logic
+  local ns_id = vim.api.nvim_create_namespace("sticky_placeholder")
+  local function update_ui()
+    if not vim.api.nvim_buf_is_valid(buf) then return end
+
+    -- Placeholder
+    vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
+    local target_line = vim.api.nvim_buf_get_lines(buf, 2, 3, false)[1] or ""
+    if #target_line <= 6 then -- Length of "- [ ] "
+      vim.api.nvim_buf_set_extmark(buf, ns_id, 2, 6, {
+        virt_text = { { "  Type your first task...", "Comment" } },
+        virt_text_pos = "overlay",
+      })
+    end
+
+    -- Footer
     local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local words = 0
     for _, line in ipairs(content) do
@@ -78,14 +94,15 @@ local function open_note(file, display_name)
     local path_str = vim.fn.fnamemodify(file, ":~")
     local word_str = "Words: " .. words
     local win_w = vim.api.nvim_win_get_width(win)
-    local padding_len = win_w - #path_str - #word_str - 4
-    local padding = string.rep(" ", math.max(1, padding_len))
-    vim.api.nvim_win_set_config(win, {
+    local padding = string.rep(" ", math.max(1, win_w - #path_str - #word_str - 4))
+
+    pcall(vim.api.nvim_win_set_config, win, {
       footer = " " .. path_str .. padding .. word_str .. " ",
       footer_pos = "left",
     })
   end
 
+  -- Auto-save
   local function save()
     pcall(vim.fn.writefile, vim.api.nvim_buf_get_lines(buf, 0, -1, false), file)
   end
@@ -93,16 +110,17 @@ local function open_note(file, display_name)
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "BufLeave" }, {
     buffer = buf,
     callback = function()
-      save(); update_placeholder(); update_footer()
+      save(); update_ui()
     end,
   })
 
-  -- Keymaps
+  -- Keymaps inside the Note
   local function close() pcall(vim.api.nvim_win_close, win, true) end
   vim.keymap.set("n", "q", close, { buffer = buf, silent = true })
   vim.keymap.set("n", "<Esc>", close, { buffer = buf, silent = true })
+  vim.keymap.set("n", "<leader>tt", function() inject_timestamp(buf) end, { buffer = buf, desc = "Insert TSR Timestamp" })
 
-  -- Checkbox smart enter
+  -- Smart checkbox Enter
   vim.keymap.set("i", "<CR>", function()
     local line = vim.api.nvim_get_current_line()
     if line:match("^%s*%- %[[^%]]*%]") then
@@ -112,184 +130,62 @@ local function open_note(file, display_name)
     end
   end, { buffer = buf, noremap = true, silent = true })
 
+  -- Toggle Checkbox
   vim.keymap.set("n", "<Tab>", function()
     local line = vim.api.nvim_get_current_line()
     local toggled = line:gsub("%[[ x]%]", function(m) return m == "[ ]" and "[x]" or "[ ]" end, 1)
     vim.api.nvim_set_current_line(toggled)
   end, { buffer = buf, silent = true })
 
-  update_placeholder()
-  update_footer()
+  update_ui()
 end
 
+-- ----------------------------------------------------------------------------
+-- 3. Public API & Telescope
+-- ----------------------------------------------------------------------------
 
---- Picker
-function M.toggle_picker()
-  local files = vim.fn.globpath(notes_dir, "*.md", false, true)
-  if #files == 0 then
-    vim.notify("No notes yet. Create one with <leader>mn", vim.log.levels.INFO)
+function M.telescope_notes()
+  local ok, telescope = pcall(require, "telescope")
+  if not ok then
+    vim.notify("Telescope not found!", vim.log.levels.ERROR)
     return
   end
 
-  local items = {}
-  for _, file in ipairs(files) do
-    local stat = uv.fs_stat(file)
-    local modified = stat and os.date("%Y-%m-%d %H:%M", stat.mtime.sec) or "Unknown"
-    local path_name = vim.fn.fnamemodify(file, ":t:r"):gsub("_", "/")
-    local custom = get_custom_title(file)
-    local display = custom and (custom .. "  →  " .. path_name) or path_name
+  local pickers = require("telescope.pickers")
+  local finders = require("telescope.finders")
+  local conf = require("telescope.config").values
+  local actions = require("telescope.actions")
+  local action_state = require("telescope.actions.state")
 
-    table.insert(items, {
-      file = file,
-      display = display,
-      path_name = path_name,
-      modified = modified,
-    })
-  end
-
-  local buf = vim.api.nvim_create_buf(false, true)
-  local width = math.floor(vim.o.columns * 0.50)
-  local height = 22
-
-  local win = vim.api.nvim_open_win(buf, true, {
-    relative = "editor",
-    width = width,
-    height = height,
-    row = math.floor((vim.o.lines - height) / 2),
-    col = math.floor((vim.o.columns - width) / 2),
-    style = "minimal",
-    border = "rounded",
-    title = " Sticky Notes ",
-    title_pos = "center",
-  })
-
-  local filtered = vim.deepcopy(items)
-  local selected = 1
-  local show_help = false
-
-  local function render()
-    if not vim.api.nvim_buf_is_valid(buf) then return end
-    vim.api.nvim_set_option_value("modifiable", true, { buf = buf })
-    local lines = {}
-
-    table.insert(lines, "  Note" .. string.rep(" ", width - 28) .. "Last Modified")
-    table.insert(lines, string.rep("─", width - 2))
-
-    for i, item in ipairs(filtered) do
-      local prefix = (i == selected) and " → " or "    "
-      local name = item.display
-      local date = item.modified
-
-      local max_len = width - #date - 12
-      if #name > max_len then
-        name = name:sub(1, max_len - 3) .. "..."
-      end
-
-      local padding = width - #prefix - #name - #date - 3
-      table.insert(lines, prefix .. name .. string.rep(" ", padding) .. date)
-    end
-
-    while #lines < height - 4 do
-      table.insert(lines, "")
-    end
-
-    table.insert(lines, string.rep("─", width - 2))
-    if show_help then
-      table.insert(lines, "  ↑↓/jk  <CR> Open   d Delete   r Rename   / Search   ? Help   q Quit")
-    else
-      table.insert(lines, "  Press ? for shortcuts")
-    end
-
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    vim.api.nvim_set_option_value("modifiable", false, { buf = buf })
-
-    vim.api.nvim_buf_clear_namespace(buf, -1, 0, -1)
-    if #filtered > 0 then
-      vim.api.nvim_buf_add_highlight(buf, 0, "Visual", selected + 1, 0, -1)
-    end
-  end
-
-  render()
-
-  local function close()
-    pcall(vim.api.nvim_win_close, win, true)
-  end
-
-  local function move(delta)
-    selected = math.max(1, math.min(#filtered, selected + delta))
-    render()
-  end
-
-  vim.keymap.set("n", "j", function() move(1) end, { buffer = buf, silent = true })
-  vim.keymap.set("n", "k", function() move(-1) end, { buffer = buf, silent = true })
-  vim.keymap.set("n", "<CR>", function()
-    if filtered[selected] then
-      close()
-      open_note(filtered[selected].file, filtered[selected].path_name)
-    end
-  end, { buffer = buf, silent = true })
-
-  vim.keymap.set("n", "q", close, { buffer = buf, silent = true })
-  vim.keymap.set("n", "<Esc>", close, { buffer = buf, silent = true })
-
-  vim.keymap.set("n", "r", function()
-    if not filtered[selected] then return end
-    local old_file = filtered[selected].file
-    vim.ui.input({
-      prompt = "Rename Note Title: ",
-      default = get_custom_title(old_file) or filtered[selected].path_name,
-    }, function(new_name)
-      if not new_name or new_name == "" then return end
-      local content = vim.fn.readfile(old_file)
-      content[1] = "# " .. new_name
-      vim.fn.writefile(content, old_file)
-      close()
-      M.toggle_picker()
-    end)
-  end, { buffer = buf, silent = true })
-
-  vim.keymap.set("n", "d", function()
-    if not filtered[selected] then return end
-    vim.ui.select({ "Yes", "No" }, { prompt = "Delete this note?" }, function(choice)
-      if choice == "Yes" then
-        vim.fn.delete(filtered[selected].file)
-        close()
-        M.toggle_picker()
-      end
-    end)
-  end, { buffer = buf, silent = true })
-
-  vim.keymap.set("n", "/", function()
-    vim.ui.input({ prompt = "Search: " }, function(input)
-      if input then
-        filtered = vim.tbl_filter(function(item)
-          return item.display:lower():find(input:lower(), 1, true)
-        end, items)
-        selected = 1
-        render()
-      end
-    end)
-  end, { buffer = buf, silent = true })
-
-  vim.keymap.set("n", "?", function()
-    show_help = not show_help
-    render()
-  end, { buffer = buf, silent = true })
+  pickers.new({}, {
+    prompt_title = "Sticky Notes Explorer",
+    finder = finders.new_oneshot_job({ "ls", notes_dir }, {}),
+    sorter = conf.generic_sorter({}),
+    previewer = conf.file_previewer({}),
+    attach_mappings = function(prompt_bufnr, map)
+      actions.select_default:replace(function()
+        actions.close(prompt_bufnr)
+        local selection = action_state.get_selected_entry()
+        if selection then
+          local full_path = notes_dir .. "/" .. selection[1]
+          open_note(full_path, selection[1]:gsub("%.md$", ""))
+        end
+      end)
+      return true
+    end,
+  }):find()
 end
 
---- Public API
 function M.open()
   local cwd = uv.cwd() or vim.fn.getcwd()
-  local filename = get_filename(cwd)
-  local filepath = notes_dir .. "/" .. filename .. ".md"
+  local filepath = notes_dir .. "/" .. get_filename(cwd) .. ".md"
   open_note(filepath, vim.fn.fnamemodify(cwd, ":t"))
 end
 
---- New Daily Note Function
 function M.open_daily()
   local date = os.date("%Y-%m-%d")
   local filepath = notes_dir .. "/" .. date .. ".md"
-  open_note(filepath, "Daily Note: " .. date)
+  open_note(filepath, "Daily: " .. date)
 end
 
 function M.setup(opts)
@@ -297,12 +193,12 @@ function M.setup(opts)
 
   vim.api.nvim_create_user_command("StickyNote", M.open, {})
   vim.api.nvim_create_user_command("StickyNoteDaily", M.open_daily, {})
-  vim.api.nvim_create_user_command("StickyNotePicker", M.toggle_picker, {})
+  vim.api.nvim_create_user_command("StickyNoteSearch", M.telescope_notes, {})
 
   if opts.keymaps ~= false then
-    vim.keymap.set("n", "<leader>mn", M.open, { desc = "Open Sticky Note" })
+    vim.keymap.set("n", "<leader>mn", M.open, { desc = "Open Context Note" })
     vim.keymap.set("n", "<leader>md", M.open_daily, { desc = "Open Daily Note" })
-    vim.keymap.set("n", "<leader>ms", M.toggle_picker, { desc = "Sticky Notes Picker" })
+    vim.keymap.set("n", "<leader>ms", M.telescope_notes, { desc = "Search Sticky Notes" })
   end
 end
 
