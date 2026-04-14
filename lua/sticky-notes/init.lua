@@ -76,24 +76,28 @@ local function open_note(file, display_name)
 		end
 
 		pcall(function()
-			-- 1. Placeholder Safety Check
 			vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
+
+			-- 1. Enhanced Placeholder Safety Check
 			local buf_line_count = vim.api.nvim_buf_line_count(buf)
 
-			-- Ensure we have at least 3 lines before trying to access index 2
+			-- Only proceed if the buffer has at least 3 lines
 			if buf_line_count >= 3 then
-				local target_line = vim.api.nvim_buf_get_lines(buf, 2, 3, false)[1] or ""
-				if #target_line <= 6 then -- Length of "- [ ] "
-					-- Clamp column to the end of the line to prevent 'out of range'
-					local safe_col = math.min(6, #target_line)
-					vim.api.nvim_buf_set_extmark(buf, ns_id, 2, safe_col, {
-						virt_text = { { "  Type your first task...", "Comment" } },
-						virt_text_pos = "overlay",
-					})
+				local lines = vim.api.nvim_buf_get_lines(buf, 2, 3, false)
+				local target_line = lines[1] -- This could still be nil if line 3 is missing
+
+				if target_line then
+					if #target_line <= 6 then
+						local safe_col = math.min(6, #target_line)
+						vim.api.nvim_buf_set_extmark(buf, ns_id, 2, safe_col, {
+							virt_text = { { "  Type your first task...", "Comment" } },
+							virt_text_pos = "overlay",
+						})
+					end
 				end
 			end
 
-			-- 2. Footer Word Count Logic
+			-- 2. Footer Logic (Remains the same, but inside pcall)
 			local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 			local words = 0
 			for _, line in ipairs(content) do
@@ -106,20 +110,12 @@ local function open_note(file, display_name)
 			local word_str = "Words: " .. words
 			local win_w = vim.api.nvim_win_get_width(win)
 			local padding_len = math.max(1, win_w - #path_str - #word_str - 4)
-			local padding = string.rep(" ", padding_len)
 
 			vim.api.nvim_win_set_config(win, {
-				footer = " " .. path_str .. padding .. word_str .. " ",
+				footer = " " .. path_str .. string.rep(" ", padding_len) .. word_str .. " ",
 				footer_pos = "left",
 			})
 		end)
-	end
-
-	-- Auto-save function
-	local function save()
-		if vim.api.nvim_buf_is_valid(buf) then
-			pcall(vim.fn.writefile, vim.api.nvim_buf_get_lines(buf, 0, -1, false), file)
-		end
 	end
 
 	-- --------------------------------------------------------------------------
