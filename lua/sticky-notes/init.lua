@@ -7,7 +7,7 @@ local notes_dir = vim.fn.stdpath("data") .. "/sticky-notes"
 vim.fn.mkdir(notes_dir, "p")
 
 -- ----------------------------------------------------------------------------
--- 1. Helpers & Internal Logic
+-- 1. Helpers
 -- ----------------------------------------------------------------------------
 
 local function get_filename(cwd)
@@ -28,7 +28,6 @@ end
 -- ----------------------------------------------------------------------------
 
 local function open_note(file, display_name)
-	-- Minimal Template
 	local lines = vim.fn.filereadable(file) == 1 and vim.fn.readfile(file)
 		or {
 			"# " .. (display_name or "New Note"),
@@ -40,11 +39,9 @@ local function open_note(file, display_name)
 	local buf = vim.api.nvim_create_buf(false, true)
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
-	-- Buffer Settings
 	vim.api.nvim_set_option_value("filetype", "markdown", { buf = buf })
 	vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = buf })
 
-	-- Window Dimensions
 	local width = math.floor(vim.o.columns * 0.68)
 	local height = math.floor(vim.o.lines * 0.58)
 
@@ -60,48 +57,43 @@ local function open_note(file, display_name)
 		title_pos = "center",
 	})
 
-	-- Visual Polish
 	vim.wo[win].winblend = 10
 	vim.wo[win].number = true
 	vim.wo[win].relativenumber = true
 
 	local ns_id = vim.api.nvim_create_namespace("sticky_placeholder")
 
-	-- --------------------------------------------------------------------------
-	-- UI Update Logic (The Fix is Here)
-	-- --------------------------------------------------------------------------
+	-- Define SAVE and UPDATE_UI early so they are in scope for the timer
+	local function save()
+		if vim.api.nvim_buf_is_valid(buf) then
+			local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+			pcall(vim.fn.writefile, content, file)
+		end
+	end
+
 	local function update_ui()
 		if not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_win_is_valid(win) then
 			return
 		end
-
 		pcall(function()
 			vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
-
-			-- 1. Enhanced Placeholder Safety Check
 			local buf_line_count = vim.api.nvim_buf_line_count(buf)
 
-			-- Only proceed if the buffer has at least 3 lines
 			if buf_line_count >= 3 then
-				local lines = vim.api.nvim_buf_get_lines(buf, 2, 3, false)
-				local target_line = lines[1] -- This could still be nil if line 3 is missing
-
-				if target_line then
-					if #target_line <= 6 then
-						local safe_col = math.min(6, #target_line)
-						vim.api.nvim_buf_set_extmark(buf, ns_id, 2, safe_col, {
-							virt_text = { { "  Type your first task...", "Comment" } },
-							virt_text_pos = "overlay",
-						})
-					end
+				local target_line = vim.api.nvim_buf_get_lines(buf, 2, 3, false)[1] or ""
+				if #target_line <= 6 then
+					local safe_col = math.min(6, #target_line)
+					vim.api.nvim_buf_set_extmark(buf, ns_id, 2, safe_col, {
+						virt_text = { { "  Type your first task...", "Comment" } },
+						virt_text_pos = "overlay",
+					})
 				end
 			end
 
-			-- 2. Footer Logic (Remains the same, but inside pcall)
 			local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 			local words = 0
-			for _, line in ipairs(content) do
-				for _ in line:gmatch("%S+") do
+			for _, l in ipairs(content) do
+				for _ in l:gmatch("%S+") do
 					words = words + 1
 				end
 			end
@@ -109,18 +101,16 @@ local function open_note(file, display_name)
 			local path_str = vim.fn.fnamemodify(file, ":~")
 			local word_str = "Words: " .. words
 			local win_w = vim.api.nvim_win_get_width(win)
-			local padding_len = math.max(1, win_w - #path_str - #word_str - 4)
+			local padding = string.rep(" ", math.max(1, win_w - #path_str - #word_str - 4))
 
 			vim.api.nvim_win_set_config(win, {
-				footer = " " .. path_str .. string.rep(" ", padding_len) .. word_str .. " ",
+				footer = " " .. path_str .. padding .. word_str .. " ",
 				footer_pos = "left",
 			})
 		end)
 	end
 
-	-- --------------------------------------------------------------------------
-	-- Autocommands with Debounce
-	-- --------------------------------------------------------------------------
+	-- Setup Debounced Timer
 	local timer = uv.new_timer()
 	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
 		buffer = buf,
@@ -137,11 +127,12 @@ local function open_note(file, display_name)
 		end,
 	})
 
-	-- Cleanup on leave
 	vim.api.nvim_create_autocmd("BufLeave", {
 		buffer = buf,
 		callback = function()
-			timer:stop()
+			if timer:is_active() then
+				timer:stop()
+			end
 			if not timer:is_closing() then
 				timer:close()
 			end
@@ -149,9 +140,7 @@ local function open_note(file, display_name)
 		end,
 	})
 
-	-- --------------------------------------------------------------------------
 	-- Keymaps
-	-- --------------------------------------------------------------------------
 	local function close()
 		pcall(vim.api.nvim_win_close, win, true)
 	end
@@ -160,16 +149,6 @@ local function open_note(file, display_name)
 	vim.keymap.set("n", "<leader>tt", function()
 		inject_timestamp(buf)
 	end, { buffer = buf, desc = "Insert Timestamp" })
-
-	-- Smart checkbox Enter
-	vim.keymap.set("i", "<CR>", function()
-		local line = vim.api.nvim_get_current_line()
-		if line:match("^%s*%- %[[^%]]*%]") then
-			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>- [ ] ", true, true, true), "n", false)
-		else
-			vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, true, true), "n", false)
-		end
-	end, { buffer = buf, noremap = true, silent = true })
 
 	-- Toggle Checkbox
 	vim.keymap.set("n", "<Tab>", function()
@@ -184,13 +163,12 @@ local function open_note(file, display_name)
 end
 
 -- ----------------------------------------------------------------------------
--- 3. Public API & Telescope
+-- 3. Public API
 -- ----------------------------------------------------------------------------
 
 function M.telescope_notes()
 	local ok, telescope = pcall(require, "telescope")
 	if not ok then
-		vim.notify("Telescope not found!", vim.log.levels.ERROR)
 		return
 	end
 
@@ -211,8 +189,7 @@ function M.telescope_notes()
 					actions.close(prompt_bufnr)
 					local selection = action_state.get_selected_entry()
 					if selection then
-						local full_path = notes_dir .. "/" .. selection[1]
-						open_note(full_path, selection[1]:gsub("%.md$", ""))
+						open_note(notes_dir .. "/" .. selection[1], selection[1]:gsub("%.md$", ""))
 					end
 				end)
 				return true
@@ -235,7 +212,6 @@ end
 
 function M.setup(opts)
 	opts = opts or {}
-
 	vim.api.nvim_create_user_command("StickyNote", M.open, {})
 	vim.api.nvim_create_user_command("StickyNoteDaily", M.open_daily, {})
 	vim.api.nvim_create_user_command("StickyNoteSearch", M.telescope_notes, {})
