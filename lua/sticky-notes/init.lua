@@ -1,6 +1,3 @@
---- sticky-notes.nvim
---- Expertly crafted for a clean, productive workflow.
-
 local M = {}
 local uv = vim.uv or vim.loop
 local notes_dir = vim.fn.stdpath("data") .. "/sticky-notes"
@@ -24,10 +21,13 @@ local function inject_timestamp(buf)
 end
 
 -- ----------------------------------------------------------------------------
--- 2. Core Note Window
+-- 2. Core Logic (Floating Window & Buffer Management)
 -- ----------------------------------------------------------------------------
 
 local function open_note(file, display_name)
+	-- Ensure directory exists
+	vim.fn.mkdir(vim.fn.fnamemodify(file, ":h"), "p")
+
 	local lines = vim.fn.filereadable(file) == 1 and vim.fn.readfile(file)
 		or {
 			"# " .. (display_name or "New Note"),
@@ -63,7 +63,7 @@ local function open_note(file, display_name)
 
 	local ns_id = vim.api.nvim_create_namespace("sticky_placeholder")
 
-	-- Define SAVE and UPDATE_UI early so they are in scope for the timer
+	-- LOCAL FUNCTIONS (Properly scoped to avoid 'nil' errors)
 	local function save()
 		if vim.api.nvim_buf_is_valid(buf) then
 			local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
@@ -75,10 +75,12 @@ local function open_note(file, display_name)
 		if not vim.api.nvim_buf_is_valid(buf) or not vim.api.nvim_win_is_valid(win) then
 			return
 		end
+
 		pcall(function()
 			vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
 			local buf_line_count = vim.api.nvim_buf_line_count(buf)
 
+			-- Safety check for Daily Notes (less than 3 lines)
 			if buf_line_count >= 3 then
 				local target_line = vim.api.nvim_buf_get_lines(buf, 2, 3, false)[1] or ""
 				if #target_line <= 6 then
@@ -90,6 +92,7 @@ local function open_note(file, display_name)
 				end
 			end
 
+			-- Footer stats
 			local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 			local words = 0
 			for _, l in ipairs(content) do
@@ -110,7 +113,7 @@ local function open_note(file, display_name)
 		end)
 	end
 
-	-- Setup Debounced Timer
+	-- AUTO-SAVE & UI UPDATE (Debounced to 200ms)
 	local timer = uv.new_timer()
 	vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
 		buffer = buf,
@@ -130,17 +133,15 @@ local function open_note(file, display_name)
 	vim.api.nvim_create_autocmd("BufLeave", {
 		buffer = buf,
 		callback = function()
-			if timer:is_active() then
+			if timer and not timer:is_closing() then
 				timer:stop()
-			end
-			if not timer:is_closing() then
 				timer:close()
 			end
 			save()
 		end,
 	})
 
-	-- Keymaps
+	-- KEYMAPS
 	local function close()
 		pcall(vim.api.nvim_win_close, win, true)
 	end
@@ -150,7 +151,7 @@ local function open_note(file, display_name)
 		inject_timestamp(buf)
 	end, { buffer = buf, desc = "Insert Timestamp" })
 
-	-- Toggle Checkbox
+	-- Toggle Checkbox with <Tab>
 	vim.keymap.set("n", "<Tab>", function()
 		local line = vim.api.nvim_get_current_line()
 		local toggled = line:gsub("%[[ x]%]", function(m)
@@ -163,7 +164,7 @@ local function open_note(file, display_name)
 end
 
 -- ----------------------------------------------------------------------------
--- 3. Public API
+-- 3. Public Interface
 -- ----------------------------------------------------------------------------
 
 function M.telescope_notes()
@@ -172,22 +173,16 @@ function M.telescope_notes()
 		return
 	end
 
-	local pickers = require("telescope.pickers")
-	local finders = require("telescope.finders")
-	local conf = require("telescope.config").values
-	local actions = require("telescope.actions")
-	local action_state = require("telescope.actions.state")
-
-	pickers
+	require("telescope.pickers")
 		.new({}, {
 			prompt_title = "Sticky Notes Explorer",
-			finder = finders.new_oneshot_job({ "ls", notes_dir }, {}),
-			sorter = conf.generic_sorter({}),
-			previewer = conf.file_previewer({}),
+			finder = require("telescope.finders").new_oneshot_job({ "ls", notes_dir }, {}),
+			sorter = require("telescope.config").values.generic_sorter({}),
+			previewer = require("telescope.config").values.file_previewer({}),
 			attach_mappings = function(prompt_bufnr, _)
-				actions.select_default:replace(function()
-					actions.close(prompt_bufnr)
-					local selection = action_state.get_selected_entry()
+				require("telescope.actions").select_default:replace(function()
+					require("telescope.actions").close(prompt_bufnr)
+					local selection = require("telescope.actions.state").get_selected_entry()
 					if selection then
 						open_note(notes_dir .. "/" .. selection[1], selection[1]:gsub("%.md$", ""))
 					end
