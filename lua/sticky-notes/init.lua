@@ -24,38 +24,37 @@ end
 
 --- Open Note Window
 local function open_note(file, display_name)
+  -- 1. Minimal Template
   local lines = vim.fn.filereadable(file) == 1 and vim.fn.readfile(file) or {
     "# " .. (display_name or "New Note"),
     "",
-    "## Tasks",
-    "- [ ] Task 1",
-    "- [ ] Task 2",
+    "- [ ] ", -- Empty checkbox ready to go
     "",
-    "----------------------------------------",
-    "## Notes",
-    "> Start typing here...",
   }
 
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.api.nvim_set_option_value("filetype", "markdown", { buf = buf })
-  vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = buf })
 
-  local title = get_custom_title(file) or display_name or "Sticky Note"
-  local width = math.floor(vim.o.columns * 0.68)
-  local height = math.floor(vim.o.lines * 0.58)
+  -- 2. Placeholder Logic (Virtual Text)
+  local ns_id = vim.api.nvim_create_namespace("placeholder")
+  local function update_placeholder()
+    vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
+    if vim.api.nvim_buf_line_count(buf) <= 4 and #vim.api.nvim_buf_get_lines(buf, 3, 4, false)[1] == 0 then
+      vim.api.nvim_buf_set_extmark(buf, ns_id, 3, 0, {
+        virt_text = { { "  Start typing notes here...", "Comment" } },
+        virt_text_pos = "overlay",
+      })
+    end
+  end
 
-  local win = vim.api.nvim_open_win(buf, true, {
-    relative = "editor",
-    width = width,
-    height = height,
-    row = math.floor((vim.o.lines - height) / 2),
-    col = math.floor((vim.o.columns - width) / 2),
-    style = "minimal",
-    border = "rounded",
-    title = " " .. title .. " ",
-    title_pos = "center",
+  -- Initial call and autocmd to clear it when typing
+  update_placeholder()
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+    buffer = buf,
+    callback = update_placeholder,
   })
+
 
   --- Statusline/Footer logic: path + word count
   local function update_footer()
@@ -74,7 +73,7 @@ local function open_note(file, display_name)
     local padding_len = win_w - #path_str - #word_str - 4
 
     if padding_len < 2 then
-      path_str = vim.fn.pathshorten(path_str)   -- Shorten path if it's too long
+      path_str = vim.fn.pathshorten(path_str) -- Shorten path if it's too long
       padding_len = win_w - #path_str - #word_str - 4
     end
 
