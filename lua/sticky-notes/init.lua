@@ -15,9 +15,7 @@ end
 
 --- Get custom title from first line if it starts with #
 local function get_custom_title(filepath)
-  if vim.fn.filereadable(filepath) == 0 then
-    return nil
-  end
+  if vim.fn.filereadable(filepath) == 0 then return nil end
   local first_line = vim.fn.readfile(filepath, "", 1)[1] or ""
   return first_line:match("^#%s+(.*)") and first_line:match("^#%s+(.*)"):gsub("^%s+", ""):gsub("%s+$", "")
 end
@@ -28,60 +26,62 @@ local function open_note(file, display_name)
   local lines = vim.fn.filereadable(file) == 1 and vim.fn.readfile(file) or {
     "# " .. (display_name or "New Note"),
     "",
-    "- [ ] ", -- Empty checkbox ready to go
+    "- [ ] ",
     "",
   }
 
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.api.nvim_set_option_value("filetype", "markdown", { buf = buf })
+  vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = buf })
 
   -- 2. Placeholder Logic (Virtual Text)
   local ns_id = vim.api.nvim_create_namespace("placeholder")
   local function update_placeholder()
+    if not vim.api.nvim_buf_is_valid(buf) then return end
     vim.api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
-    if vim.api.nvim_buf_line_count(buf) <= 4 and #vim.api.nvim_buf_get_lines(buf, 3, 4, false)[1] == 0 then
-      vim.api.nvim_buf_set_extmark(buf, ns_id, 3, 0, {
-        virt_text = { { "  Start typing notes here...", "Comment" } },
+    -- If line 3 (index 2) is empty, show placeholder
+    local target_line = vim.api.nvim_buf_get_lines(buf, 2, 3, false)[1] or ""
+    if #target_line <= 6 then -- "- [ ] " is 6 chars
+      vim.api.nvim_buf_set_extmark(buf, ns_id, 2, 6, {
+        virt_text = { { "  Start typing...", "Comment" } },
         virt_text_pos = "overlay",
       })
     end
   end
 
-  -- Initial call and autocmd to clear it when typing
-  update_placeholder()
-  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
-    buffer = buf,
-    callback = update_placeholder,
+  -- 3. Restore Window Logic
+  local title = get_custom_title(file) or display_name or "Sticky Note"
+  local width = math.floor(vim.o.columns * 0.68)
+  local height = math.floor(vim.o.lines * 0.58)
+
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = "editor",
+    width = width,
+    height = height,
+    row = math.floor((vim.o.lines - height) / 2),
+    col = math.floor((vim.o.columns - width) / 2),
+    style = "minimal",
+    border = "rounded",
+    title = " " .. title .. " ",
+    title_pos = "center",
   })
 
-
-  --- Statusline/Footer logic: path + word count
+  -- 4. Footer & Autocmds
   local function update_footer()
     if not vim.api.nvim_win_is_valid(win) then return end
-
     local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local words = 0
     for _, line in ipairs(content) do
       for _ in line:gmatch("%S+") do words = words + 1 end
     end
-
-    local path_str = vim.fn.fnamemodify(file, ":~") -- Shorten home to ~
+    local path_str = vim.fn.fnamemodify(file, ":~")
     local word_str = "Words: " .. words
     local win_w = vim.api.nvim_win_get_width(win)
-
     local padding_len = win_w - #path_str - #word_str - 4
-
-    if padding_len < 2 then
-      path_str = vim.fn.pathshorten(path_str) -- Shorten path if it's too long
-      padding_len = win_w - #path_str - #word_str - 4
-    end
-
     local padding = string.rep(" ", math.max(1, padding_len))
-    local footer_text = " " .. path_str .. padding .. word_str .. " "
-
     vim.api.nvim_win_set_config(win, {
-      footer = footer_text,
+      footer = " " .. path_str .. padding .. word_str .. " ",
       footer_pos = "left",
     })
   end
@@ -92,22 +92,17 @@ local function open_note(file, display_name)
 
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "BufLeave" }, {
     buffer = buf,
-    callback = save,
+    callback = function()
+      save(); update_placeholder(); update_footer()
+    end,
   })
 
-  update_footer()
-  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "CursorMoved" }, {
-    buffer = buf,
-    callback = update_footer,
-  })
-
-  local function close()
-    pcall(vim.api.nvim_win_close, win, true)
-  end
-
+  -- Keymaps
+  local function close() pcall(vim.api.nvim_win_close, win, true) end
   vim.keymap.set("n", "q", close, { buffer = buf, silent = true })
   vim.keymap.set("n", "<Esc>", close, { buffer = buf, silent = true })
 
+  -- Checkbox smart enter
   vim.keymap.set("i", "<CR>", function()
     local line = vim.api.nvim_get_current_line()
     if line:match("^%s*%- %[[^%]]*%]") then
@@ -119,12 +114,14 @@ local function open_note(file, display_name)
 
   vim.keymap.set("n", "<Tab>", function()
     local line = vim.api.nvim_get_current_line()
-    local toggled = line:gsub("%[[ x]%]", function(m)
-      return m == "[ ]" and "[x]" or "[ ]"
-    end, 1)
+    local toggled = line:gsub("%[[ x]%]", function(m) return m == "[ ]" and "[x]" or "[ ]" end, 1)
     vim.api.nvim_set_current_line(toggled)
   end, { buffer = buf, silent = true })
+
+  update_placeholder()
+  update_footer()
 end
+
 
 --- Picker
 function M.toggle_picker()
