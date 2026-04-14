@@ -92,23 +92,31 @@ local function open_note(file, display_name)
   end, { buffer = buf, silent = true })
 
   -- Statusline: path + word count
-  local function update_status()
+-- Inside open_note function...
+
+local function update_ui()
     local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local words = 0
     for _, line in ipairs(content) do
-      for _ in line:gmatch("%S+") do words = words + 1 end
+        for _ in line:gmatch("%S+") do words = words + 1 end
     end
+    
     local path = vim.fn.fnamemodify(file, ":t:r"):gsub("_", "/")
-    vim.wo[win].statusline = "%= " .. path .. "   |   Words: " .. words .. " %="
-  end
-
-  update_status()
-  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "CursorMoved" }, {
-    buffer = buf,
-    callback = update_status,
-  })
+    local footer_text = " " .. path .. " | Words: " .. words .. " "
+    
+    -- Update the window configuration dynamically
+    vim.api.nvim_win_set_config(win, {
+        footer = footer_text,
+        footer_pos = "center"
+    })
 end
 
+-- Call update_ui instead of update_status in your autocmds
+update_ui()
+vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "CursorMoved" }, {
+    buffer = buf,
+    callback = update_ui,
+})
 --- Picker
 function M.toggle_picker()
   local files = vim.fn.globpath(notes_dir, "*.md", false, true)
