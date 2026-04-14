@@ -60,36 +60,33 @@ local function open_note(file, display_name)
   --- Statusline/Footer logic: path + word count
   local function update_footer()
     if not vim.api.nvim_win_is_valid(win) then return end
-    
+
     local content = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
     local words = 0
     for _, line in ipairs(content) do
       for _ in line:gmatch("%S+") do words = words + 1 end
     end
-    
+
     local path_str = vim.fn.fnamemodify(file, ":~") -- Shorten home to ~
     local word_str = "Words: " .. words
     local win_w = vim.api.nvim_win_get_width(win)
-    
-    -- Calculate space between left-aligned path and right-aligned word count
-    -- -4 accounts for border edges and internal padding
+
     local padding_len = win_w - #path_str - #word_str - 4
-    
+
     if padding_len < 2 then
-        path_str = vim.fn.pathshorten(path_str) -- Shorten path if it's too long
-        padding_len = win_w - #path_str - #word_str - 4
+      path_str = vim.fn.pathshorten(path_str)   -- Shorten path if it's too long
+      padding_len = win_w - #path_str - #word_str - 4
     end
-    
+
     local padding = string.rep(" ", math.max(1, padding_len))
     local footer_text = " " .. path_str .. padding .. word_str .. " "
-    
+
     vim.api.nvim_win_set_config(win, {
       footer = footer_text,
       footer_pos = "left",
     })
   end
 
-  -- Auto-save
   local function save()
     pcall(vim.fn.writefile, vim.api.nvim_buf_get_lines(buf, 0, -1, false), file)
   end
@@ -99,7 +96,6 @@ local function open_note(file, display_name)
     callback = save,
   })
 
-  -- Update footer on changes
   update_footer()
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "CursorMoved" }, {
     buffer = buf,
@@ -113,7 +109,6 @@ local function open_note(file, display_name)
   vim.keymap.set("n", "q", close, { buffer = buf, silent = true })
   vim.keymap.set("n", "<Esc>", close, { buffer = buf, silent = true })
 
-  -- Smart checkbox
   vim.keymap.set("i", "<CR>", function()
     local line = vim.api.nvim_get_current_line()
     if line:match("^%s*%- %[[^%]]*%]") then
@@ -127,7 +122,7 @@ local function open_note(file, display_name)
     local line = vim.api.nvim_get_current_line()
     local toggled = line:gsub("%[[ x]%]", function(m)
       return m == "[ ]" and "[x]" or "[ ]"
-    end, 1) -- Only toggle the first one
+    end, 1)
     vim.api.nvim_set_current_line(toggled)
   end, { buffer = buf, silent = true })
 end
@@ -185,7 +180,7 @@ function M.toggle_picker()
     table.insert(lines, string.rep("─", width - 2))
 
     for i, item in ipairs(filtered) do
-      local prefix = (i == selected) and " → " or "   "
+      local prefix = (i == selected) and " → " or "    "
       local name = item.display
       local date = item.modified
 
@@ -214,7 +209,7 @@ function M.toggle_picker()
 
     vim.api.nvim_buf_clear_namespace(buf, -1, 0, -1)
     if #filtered > 0 then
-        vim.api.nvim_buf_add_highlight(buf, 0, "Visual", selected + 1, 0, -1)
+      vim.api.nvim_buf_add_highlight(buf, 0, "Visual", selected + 1, 0, -1)
     end
   end
 
@@ -229,12 +224,8 @@ function M.toggle_picker()
     render()
   end
 
-  -- Keymaps for Picker
   vim.keymap.set("n", "j", function() move(1) end, { buffer = buf, silent = true })
   vim.keymap.set("n", "k", function() move(-1) end, { buffer = buf, silent = true })
-  vim.keymap.set("n", "<Down>", function() move(1) end, { buffer = buf, silent = true })
-  vim.keymap.set("n", "<Up>", function() move(-1) end, { buffer = buf, silent = true })
-
   vim.keymap.set("n", "<CR>", function()
     if filtered[selected] then
       close()
@@ -298,14 +289,23 @@ function M.open()
   open_note(filepath, vim.fn.fnamemodify(cwd, ":t"))
 end
 
+--- New Daily Note Function
+function M.open_daily()
+  local date = os.date("%Y-%m-%d")
+  local filepath = notes_dir .. "/" .. date .. ".md"
+  open_note(filepath, "Daily Note: " .. date)
+end
+
 function M.setup(opts)
   opts = opts or {}
 
   vim.api.nvim_create_user_command("StickyNote", M.open, {})
+  vim.api.nvim_create_user_command("StickyNoteDaily", M.open_daily, {})
   vim.api.nvim_create_user_command("StickyNotePicker", M.toggle_picker, {})
 
   if opts.keymaps ~= false then
     vim.keymap.set("n", "<leader>mn", M.open, { desc = "Open Sticky Note" })
+    vim.keymap.set("n", "<leader>md", M.open_daily, { desc = "Open Daily Note" })
     vim.keymap.set("n", "<leader>ms", M.toggle_picker, { desc = "Sticky Notes Picker" })
   end
 end
